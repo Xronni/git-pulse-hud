@@ -176,6 +176,8 @@ class ReleaseDrafterDialog(Gtk.Window):
 
         ok, out = self.git.create_tag(tag_name, message)
         if ok:
+            # Push tag to remote if origin is configured
+            self.git._run(["push", "origin", tag_name])
             self.sound.play("commit")
             if self.on_tag_created:
                 self.on_tag_created(tag_name)

@@ -5,12 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>GitPulse HUD</strong> is a sleek, lightweight, semi-transparent Git micro-staging, Conventional Commits assistant, and real-time repository pulse analytics companion for Linux developers. Built with GTK4 & Libadwaita, featuring Cairo-rendered charts, tactile haptic UI sounds, and full GitHub cloud traffic & telemetry insights.
-</p>
-
-<p align="center">
-  <!-- Place your demo.gif or preview screenshot in the assets folder -->
-  <img src="assets/demo.png" alt="GitPulse HUD Preview" width="700">
+  <strong>GitPulse HUD</strong> is a sleek, lightweight, semi-transparent Git micro-staging, Conventional Commits assistant, visual branch graph, and real-time repository pulse analytics companion for Linux developers. Built with GTK4 & Libadwaita, featuring Cairo vector graphics, pre-commit secret scanning, tactile haptic sound feedback, and live GitHub cloud traffic & telemetry insights.
 </p>
 
 <p align="center">
@@ -38,47 +33,64 @@
   * Real-time tracking of staged, unstaged, and untracked files.
   * One-click individual staging or batch "Stage All" / "Unstage All".
   * Integrated inline colorized Diff Viewer with addition/deletion line highlighting.
+* 🌿 **Interactive Branch Tree & Visual Git Graph:**
+  * Custom Cairo supersampled vector graphics rendering parallel branch tracks with distinct color lanes.
+  * Smooth branch merge curves and commit node glow indicators.
+  * Top bar branch switcher dropdown with 1-click `git checkout`.
+* 📦 **Git Stash Shelf & Inspector:**
+  * Dedicated split-view modal dialog displaying all stored stashes with relative timestamps and messages.
+  * Real-time syntax-colored diff preview (`+green`, `-red`).
+  * 1-Click **Apply**, **Pop**, and **Drop** actions.
+* 🛡️ **Pre-Commit Secret Scanner:**
+  * Ultra-fast (<3ms) local analysis of staged diffs before commit.
+  * Proactively detects leaked GitHub PATs (`ghp_`), API keys (OpenAI, Anthropic, AWS, Google), private keys (`id_rsa`, `.pem`), and sensitive configuration files (`.env`, `credentials.json`).
+  * Live status pill in Commit Composer with masked previews (`ghp_••••••••xxxx`) and commit interception warnings.
+* 🚀 **One-Click Release Drafter & Changelog Synthesizer:**
+  * Scans commits since the latest git tag and auto-synthesizes structured release notes grouped by Conventional Commits (`Features`, `Bug Fixes`, `Documentation`, `Performance`, `Maintenance`).
+  * Automatic semver suggestion (`vX.Y.Z`).
+  * 1-Click Markdown clipboard export and Git tag creation.
+* ⚡ **Spotlight Quick Switcher (Ctrl+K):**
+  * Instant repository switcher modal with fuzzy search.
+  * Live status indicators: active branch badges, `clean` tree badges, and uncommitted change counters.
 * ✍️ **Conventional Commits Composer:**
-  * Quick selector for commit types (`feat`, `fix`, `refactor`, `docs`, `perf`, `chore`, `test`, `style`, `ci`).
+  * Quick selector for commit types (`feat`, `fix`, `refactor`, `docs`, `perf`, `chore`, `test`, `style`).
   * Optional scope field, breaking change toggle (`!`), and live preview pill.
   * 1-Click "Commit" and "Commit & Push" with automatic remote sync.
-  * Stash & Pop stash quick actions.
 * 📊 **Local Repository Pulse & Analytics:**
   * **Commit Velocity:** Smooth vector bar chart drawn with Cairo showing commits across the last 14 days.
   * **24h Punchcard Rhythm:** Hourly heatmap uncovering peak developer productivity hours (00h..23h).
   * **Recent Commits Feed:** Interactive timeline with 1-click commit hash clipboard copying.
-  * Repository summary: total commits, contributors count, tracked files.
-* 🌐 **GitHub Cloud Telemetry & Insights (Zero-Configuration):**
-  * 👀 **Page Views:** Total views over the last 14 days with daily trend chart.
-  * 👤 **Unique Visitors:** Count of distinct users visiting the repo.
-  * 🌐 **Top Referrers:** Real traffic sources (e.g. Habr, Reddit, Telegram, Google, YouTube).
+* 🌐 **GitHub Cloud Telemetry & Insights:**
+  * 👀 **Page Views & 👤 Unique Visitors:** 14-day traffic trend chart.
+  * 🌐 **Top Referrers:** Real traffic sources (Habr, Reddit, Telegram, Google, YouTube).
   * ⭐ **Stars & 🍴 Forks:** Live stargazer and fork counters.
   * 📦 **Asset Download Counters:** Exact download counts for every release binary (`.deb`, `.tar.gz`, `.zip`).
   * 👍 ❤️ 🚀 **Community Reactions:** Aggregated emoji sentiment on releases and issues.
-  * 💬 **Feedback Tracker:** Open issues and discussions tracker.
 * 🔊 **Tactile Sound Engine (Zero External Dependencies):**
   * Procedurally synthesized in-memory haptic sounds using pure Python wave math.
   * Mechanical switch click on stage/unstage, satisfying chord chime on commit, ascending swoosh on push.
-  * Instant toggle (🔊 / 🔇) in header bar.
 * 🎨 **Dark Glassmorphic Libadwaita Aesthetic:**
-  * Translucent backdrop, rounded acrylic corners, subtle borders.
-  * Bilingual interface (English / Русский) toggleable on the fly.
+  * Official Libadwaita CSD window decorations (zero duplicate titlebars).
+  * Bilingual interface (English / Russian) toggleable on the fly with smooth 1.5s refresh animation.
 
 ---
 
 ### 📥 Installation & Quickstart
 
 #### Requirements
-* Linux OS (Ubuntu, Debian, Fedora, Arch, etc.)
+* Linux OS (Ubuntu, Debian, Fedora, Arch, openSUSE, etc.)
 * Python 3.10+
-* PyGObject with GTK4 & Libadwaita (`python3-gi`, `gir1.2-gtk-4.0`, `gir1.2-adw-1`)
+* PyGObject with GTK4 & Libadwaita (`python3-gi`, `gir1.2-gtk-4.0`, `gir1.2-adw-1`, `python3-cairo`)
 
 ```bash
-# Ubuntu / Debian:
-sudo apt install python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+# Ubuntu / Debian / Pop!_OS / Linux Mint:
+sudo apt update && sudo apt install -y python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 git
 
-# Arch Linux:
-sudo pacman -S python-gobject gtk4 libadwaita
+# Fedora:
+sudo dnf install -y python3-gobject gtk4 libadwaita git python3-cairo
+
+# Arch Linux / Manjaro:
+sudo pacman -S --needed python-gobject gtk4 libadwaita git python-cairo
 ```
 
 #### Run Directly
@@ -87,12 +99,19 @@ git clone https://github.com/Xronni/git-pulse-hud.git
 cd git-pulse-hud
 ./run.sh
 ```
+*(The launcher automatically verifies dependencies on clean OS installations and offers 1-click package setup)*
 
 #### Install Desktop Application
 ```bash
 ./install.sh
 ```
-Now **GitPulse HUD** appears in your desktop application launcher!
+Now **GitPulse HUD** appears in your desktop application launcher with its native icon!
+
+#### Run Verification Suite
+```bash
+./test.sh
+```
+Runs 36 automated functional, unit, and integration tests across all subsystems.
 
 ---
 
@@ -103,17 +122,23 @@ git-pulse-hud/
 ├── main.py              # Main Application Window & GTK4 Event Loop
 ├── git_engine.py        # High-performance Git CLI & Porcelain Parser
 ├── github_telemetry.py  # GitHub API client (Views, Referrers, Downloads, Reactions)
-├── pulse_widget.py      # Cairo DrawingArea widgets (Velocity, Punchcard, Views)
+├── pulse_widget.py      # Cairo DrawingArea widgets (Velocity, Punchcard, Views, Graph)
 ├── diff_viewer.py       # Syntax-highlighted inline Diff Dialog
+├── stash_dialog.py      # Stash Shelf & Inspector modal with instant diff
+├── release_dialog.py    # One-click Conventional Release Drafter & Tag Creator
+├── secret_scanner.py    # Pre-commit zero-dependency regex secret scanner
+├── quick_switcher.py    # Spotlight-style repository switcher (Ctrl+K)
 ├── sound_engine.py      # Pure Python procedural audio generator & player
 ├── i18n.py              # Bilingual localization (English / Russian)
 ├── style.css            # Modern glassmorphism CSS stylesheets
-├── run.sh               # Quick executable runner
+├── verify_app.py        # 36-test automated pre-deployment verification suite
+├── run.sh               # Intelligent launcher with clean OS dependency detection
 ├── install.sh           # Linux desktop entry installer
 ├── uninstall.sh         # Clean uninstaller
+├── test.sh              # Fast test runner script
 ├── assets/
-│   └── icon.png         # 256x256 modern application logo
-├── README.md            # Documentation & showcase
+│   └── icon.png         # Modern 256x256 application logo
+├── README.md            # Bilingual documentation & showcase
 └── LICENSE              # MIT License
 ```
 
@@ -125,31 +150,46 @@ git-pulse-hud/
 
 * ⚡ **Микро-стейджинг и просмотр Diff:**
   * Отслеживание подготовленных (staged), измененных (unstaged) и новых файлов в реальном времени.
-  * Стейджинг в один клик или пакетные «Стейджить всё» / «Снять всё».
+  * Стейджинг в один клик или пакетные «Подготовить всё» / «Отменить подготовку».
   * Встроенное окно просмотра диффа с подсветкой добавленных (`+`) и удаленных (`-`) строк.
+* 🌿 **Интерактивное дерево веток и граф Git:**
+  * Векторный рендер графа на Cairo с параллельными дорожками разных цветов.
+  * Плавные кривые слияния (merge) и индикаторы узлов коммитов.
+  * Выпадающее меню переключения веток в 1 клик (`🌿 <ветка> ▾`).
+* 📦 **Полка и инспектор Git Stash:**
+  * Отдельное окно управления тайниками с датами и сообщениями.
+  * Моментальный предпросмотр diff каждого тайника с синтаксической подсветкой.
+  * Кнопки «Применить», «Восстановить» и «Удалить» в 1 клик.
+* 🛡️ **Встроенный сканер секретов (Pre-Commit Scanner):**
+  * Молниеносный анализ подготовленных файлов перед созданием коммита (<3 мс).
+  * Обнаружение токенов GitHub (`ghp_`), API-ключей (OpenAI, Anthropic, AWS, Google), приватных ключей (`id_rsa`, `.pem`) и файлов окружения (`.env`).
+  * Замаскированные превью (`ghp_••••••••xxxx`) и защита от случайной утечки секретов в репозиторий.
+* 🚀 **Конструктор релизов и синтезатор ченджлога:**
+  * Автоматический сбор коммитов с момента последнего тега по Conventional Commits (`✨ Возможности`, `🐛 Исправления`, `📚 Документация`, `⚡ Производительность`, `🔨 Рефакторинг`).
+  * Расчёт следующего номера версии (`vX.Y.Z`).
+  * Копирование Markdown в буфер и создание Git-тега в 1 клик.
+* ⚡ **Быстрый переход между проектами (Ctrl+K):**
+  * Всплывающее Spotlight-окно поиска недавних репозиториев.
+  * Индикаторы активной ветки и статуса изменений (`clean` / `● N изменений`).
 * ✍️ **Конструктор Conventional Commits:**
-  * Удобный выбор типов коммита (`feat`, `fix`, `refactor`, `docs`, `perf`, `chore`, `test` и др.).
-  * Поле скоупа, флаг ломающих изменений (`!`) и «живое» превью сообщения.
-  * Кнопки «Коммит» и «Коммит & Пуш» с мгновенной синхронизацией.
-  * Быстрый Stash и извлечение из Stash.
+  * Быстрый выбор типов коммита (`feat`, `fix`, `refactor`, `docs`, `perf`, `chore`, `test`, `style`).
+  * Поле скоупа, флаг критических изменений (`!`) и живое превью сообщения.
+  * Кнопки «Создать коммит» и «Коммит и отправка».
 * 📊 **Пульс репозитория и локальная аналитика:**
-  * **Скорость коммитов (Commit Velocity):** Сглаженный векторный график на Cairo за последние 14 дней.
-  * **24-часовой Punchcard:** Почасовая карта активности для определения пика продуктивности (00ч..23ч).
-  * **Лента недавних коммитов:** Интерактивная хронология с копированием хеша коммита в буфер в один клик.
+  * **Динамика коммитов:** Векторный график активности за последние 14 дней на Cairo.
+  * **24-часовой Punchcard:** Распределение коммитов по часам суток (00ч..23ч).
+  * **Хронология коммитов:** Список с копированием хеша в буфер в 1 клик.
 * 🌐 **Метрики и телеметрия GitHub:**
-  * 👀 **Просмотры страниц (Page Views):** График и счетчик открытий страницы проекта за 14 дней.
-  * 👤 **Уникальные посетители (Unique Visitors):** Количество уникальных разработчиков, посетивших репозиторий.
-  * 🌐 **Источники переходов (Referrers):** Сайты, откуда приходит трафик (Хабр, Reddit, Telegram, Google, YouTube).
-  * ⭐ **Звёзды & 🍴 Форки:** Актуальные счетчики популярности.
-  * 📦 **Счётчик скачиваний релизов:** Точное количество загрузок каждого прикрепленного бинарника (`.deb`, `.zip`, `.tar.gz`).
+  * 👀 **Просмотры (Page Views) & 👤 Уникальные посетители:** График посещаемости за 14 дней.
+  * 🌐 **Источники переходов (Рефереры):** Сайты, откуда приходят разработчики (Telegram, Habr, Reddit, Google).
+  * ⭐ **Звёзды & 🍴 Форки:** Счётчики популярности.
+  * 📦 **Счётчик скачиваний файлов релизов:** Количество загрузок бинарников (`.deb`, `.zip`, `.tar.gz`).
   * 👍 ❤️ 🚀 **Реакции сообщества:** Суммарные эмодзи-реакции на релизах и тикетах.
-  * 💬 **Обратная связь:** Трекинг открытых тикетов (Issues) и обсуждений.
 * 🔊 **Тактильный звуковой движок:**
-  * Процедурный синтез приятных кликов переключателей, аккорда подтверждения коммита и звука отправки на GitHub без внешних аудио-зависимостей.
-  * Мгновенное включение/отключение звука (🔊 / 🔇) в шапке.
+  * Процедурный синтез приятных кликов, аккорда подтверждения коммита и звука пуша на чистом Python без внешних файлов.
 * 🎨 **Стиль Dark Glassmorphic Libadwaita:**
-  * Полупрозрачные акриловые панели с мягкими скруглениями и тонкими рамками.
-  * Переключение языка интерфейса (RU / EN) в один клик.
+  * Официальные заголовки окон CSD без дублирования рамок.
+  * Мгновенное переключение языка (RU / EN) на лету.
 
 ---
 
@@ -161,6 +201,9 @@ git-pulse-hud/
 
 # Установка в систему с иконкой и ярлыком в меню приложений:
 ./install.sh
+
+# Запуск полного набора из 36 тестов:
+./test.sh
 ```
 
 ---

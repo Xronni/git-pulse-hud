@@ -213,7 +213,9 @@ class GitEngine:
 
     def push(self):
         branch = self.get_current_branch()
-        res = subprocess.run(["git", "push", "origin", branch], cwd=self.root_path, capture_output=True, text=True, check=False)
+        res = subprocess.run(["git", "push", "-u", "origin", branch], cwd=self.root_path, capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            res = subprocess.run(["git", "push"], cwd=self.root_path, capture_output=True, text=True, check=False)
         return res.returncode == 0, res.stdout or res.stderr
 
     def pull(self):
