@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=GitPulse HUD
+GenericName=Git HUD & Telemetry Companion
+Comment=Sleek Libadwaita Git micro-staging, conventional commits, and repo pulse analytics companion
+Exec=/bin/bash -c "cd /home/xronni/Документы/other/projects/git-pulse-hud && python3 main.py"
+Icon=git-pulse-hud
+Terminal=false
+Type=Application
+Categories=Development;RevisionControl;GTK;
+StartupNotify=true
+StartupWMClass=io.github.xronni.gitpulse
