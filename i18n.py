@@ -212,6 +212,7 @@ TRANSLATIONS = {
         "cancel": "Отмена",
         "sound_fx": "Звуковой отклик",
         "btn_refresh": "Обновить",
+        "refreshing": "Обновление данных репозитория...",
         "refresh_done": "Обновлено ✓",
         "btn_open_repo": "Открыть репозиторий...",
         "lang_toggle_tooltip": "Сменить язык (EN/RU)",
