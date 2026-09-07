@@ -21,9 +21,6 @@ class DiffViewerDialog(Gtk.Window):
         self.is_staged = is_staged
         self.on_stage_toggle = on_stage_toggle
 
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_child(main_box)
-
         # Header Bar
         header = Adw.HeaderBar()
         title_widget = Adw.WindowTitle(
@@ -38,13 +35,13 @@ class DiffViewerDialog(Gtk.Window):
         btn_action.connect("clicked", self._on_action_clicked)
         header.pack_end(btn_action)
 
-        main_box.append(header)
+        self.set_titlebar(header)
 
         # Diff Scrolled Window
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_hexpand(True)
-        main_box.append(scrolled)
+        self.set_child(scrolled)
 
         # Text View for diff
         text_view = Gtk.TextView()

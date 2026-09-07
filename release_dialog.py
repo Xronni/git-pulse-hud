@@ -23,9 +23,6 @@ class ReleaseDrafterDialog(Gtk.Window):
         self.set_default_size(680, 560)
         self.add_css_class("release-dialog-window")
 
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_child(main_box)
-
         # Header Bar
         header = Adw.HeaderBar()
         title_widget = Adw.WindowTitle(
@@ -33,7 +30,7 @@ class ReleaseDrafterDialog(Gtk.Window):
             subtitle=t("release_drafter_sub")
         )
         header.set_title_widget(title_widget)
-        main_box.append(header)
+        self.set_titlebar(header)
 
         # Form content
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
@@ -41,7 +38,7 @@ class ReleaseDrafterDialog(Gtk.Window):
         content.set_margin_bottom(16)
         content.set_margin_start(20)
         content.set_margin_end(20)
-        main_box.append(content)
+        self.set_child(content)
 
         # Tag & Title row
         inputs_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)

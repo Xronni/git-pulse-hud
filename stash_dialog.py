@@ -23,9 +23,6 @@ class StashInspectorDialog(Gtk.Window):
         self.set_default_size(840, 520)
         self.add_css_class("stash-dialog-window")
 
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        self.set_child(main_box)
-
         # Header Bar
         header = Adw.HeaderBar()
         title_widget = Adw.WindowTitle(
@@ -33,14 +30,14 @@ class StashInspectorDialog(Gtk.Window):
             subtitle=t("stash_shelf_sub")
         )
         header.set_title_widget(title_widget)
-        main_box.append(header)
+        self.set_titlebar(header)
 
         # Main horizontal split
         self.content_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.content_paned.set_position(310)
         self.content_paned.set_vexpand(True)
         self.content_paned.set_hexpand(True)
-        main_box.append(self.content_paned)
+        self.set_child(self.content_paned)
 
         # Left: Stash list
         left_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
