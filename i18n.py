@@ -81,6 +81,9 @@ TRANSLATIONS = {
         "refresh_done": "Up to date ✓",
         "btn_open_repo": "Open Repository...",
         "lang_toggle_tooltip": "Switch Language (EN/RU)",
+        "btn_push": "Push",
+        "btn_push_ahead": "Push Commits to GitHub",
+        "push_failed": "Push Failed",
         
         # New Feature 1: Branches & Graph
         "switch_branch": "Switch Branch",
@@ -216,6 +219,9 @@ TRANSLATIONS = {
         "refresh_done": "Обновлено ✓",
         "btn_open_repo": "Открыть репозиторий...",
         "lang_toggle_tooltip": "Сменить язык (EN/RU)",
+        "btn_push": "Отправить",
+        "btn_push_ahead": "Отправить коммиты на GitHub",
+        "push_failed": "Ошибка отправки коммитов",
         
         # New Feature 1: Branches & Graph
         "switch_branch": "Переключить ветку",

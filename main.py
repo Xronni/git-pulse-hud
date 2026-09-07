@@ -404,6 +404,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_stash_shelf.connect("clicked", lambda b: self._on_open_stashes())
         top_row.append(self.btn_stash_shelf)
 
+        self.btn_push_only = Gtk.Button(label=f"↑ {t('btn_push')}")
+        self.btn_push_only.add_css_class("primary-btn")
+        self.btn_push_only.connect("clicked", lambda b: self._do_push())
+        top_row.append(self.btn_push_only)
+
         page.append(top_row)
 
         scrolled = Gtk.ScrolledWindow()
@@ -962,6 +967,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_stash.set_label(t("stash_save"))
         self.btn_pop.set_label(t("stash_pop"))
         self.btn_stash_shelf.set_label(t("stashes"))
+        self.btn_push_only.set_label(f"↑ {t('btn_push')}")
         self.lbl_composer_hdr.set_text(t("commit_builder"))
         self.check_breaking.set_label(t("breaking_change"))
         self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
@@ -1186,6 +1192,14 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         s_lbl = Gtk.Label(label=subtitle, css_classes=["view-subtitle"])
         box.append(s_lbl)
 
+        ahead, behind = self.git.get_ahead_behind()
+        if ahead > 0:
+            btn_sync = Gtk.Button(label=f"🚀 {t('btn_push_ahead')} ({ahead})")
+            btn_sync.add_css_class("primary-btn")
+            btn_sync.set_margin_top(12)
+            btn_sync.connect("clicked", lambda b: self._do_push())
+            box.append(btn_sync)
+
         self.files_container.append(box)
 
     def _add_file_row(self, item, is_staged):
@@ -1303,6 +1317,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     self._load_repo_data()
                 else:
                     self.sound.play("error")
+                    err_msg = out.strip() if out else "Unknown error during push."
+                    self._show_error_dialog(t("push_failed"), err_msg)
             GLib.idle_add(_done)
         threading.Thread(target=_bg, daemon=True).start()
 
