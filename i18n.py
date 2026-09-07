@@ -1,42 +1,55 @@
 #!/usr/bin/env python3
 """
-GitPulse HUD — Clean Professional Internationalization
+GitPulse HUD — Standard Official Localization (EN / RU)
+Clean, professional developer terminology matching JetBrains & GitHub Desktop standards.
 """
 
 TRANSLATIONS = {
     "en": {
         "app_title": "GitPulse",
         "app_subtitle": "Git & Telemetry HUD",
-        "tab_changes": "Changes & Staging",
+        "tab_changes": "Files & Changes",
         "tab_history": "Commit History",
-        "tab_pulse": "Repo Pulse",
-        "tab_telemetry": "GitHub Telemetry",
+        "tab_pulse": "Repository Pulse",
+        "tab_telemetry": "GitHub Analytics",
+        
+        # Subtitles
+        "sub_changes": "Working tree management and commit preparation",
+        "sub_history": "Chronological log of repository commits",
+        "sub_pulse": "Development velocity and daily activity distribution",
+        "sub_telemetry": "Traffic, unique visitors, and release downloads",
+        
+        # Staging & Working Tree
         "staged_title": "Staged Changes",
-        "unstaged_title": "Working Directory Changes",
+        "unstaged_title": "Modified Files",
         "untracked_title": "Untracked Files",
         "clean_tree": "Working tree is clean",
-        "clean_tree_sub": "No modified files in this repository.",
+        "clean_tree_sub": "No modified or uncommitted files in this repository.",
         "stage_all": "Stage All",
         "unstage_all": "Unstage All",
+        "stash_save": "Stash Changes",
+        "stash_pop": "Pop Stash",
+        
+        # Commit Composer
         "commit_builder": "Commit Composer",
         "commit_type": "Type",
-        "commit_scope_placeholder": "scope (optional)",
-        "commit_desc_placeholder": "Write a concise imperative commit summary...",
-        "breaking_change": "Breaking (!)",
+        "commit_scope_placeholder": "Scope (optional)",
+        "commit_desc_placeholder": "Concise summary of changes made...",
+        "breaking_change": "Breaking Changes (!)",
         "btn_commit": "Commit Changes",
         "btn_commit_push": "Commit & Push",
-        "btn_stash": "Stash",
-        "btn_pop": "Pop Stash",
-        "btn_refresh": "Refresh",
-        "btn_open_repo": "Open Repository...",
-        "velocity_title": "Commit Velocity (14 Days)",
-        "punchcard_title": "24-Hour Activity Distribution",
+        
+        # Metrics & Pulse
+        "velocity_title": "Commit Velocity (Last 14 Days)",
+        "punchcard_title": "24-Hour Activity Heatmap",
         "stat_commits": "Commits",
         "stat_contributors": "Authors",
         "stat_files": "Files",
-        "stat_stashes": "Stashes",
+        "stat_stashes": "In Stash",
         "copy_hash": "Copy Hash",
         "hash_copied": "Commit hash copied to clipboard",
+        
+        # GitHub Analytics
         "views_14d": "Page Views",
         "uniques_14d": "Unique Visitors",
         "stars": "Stars",
@@ -44,79 +57,87 @@ TRANSLATIONS = {
         "downloads": "Downloads",
         "open_issues": "Open Issues",
         "reactions": "Community Reactions",
-        "top_referrers": "Top Referrers",
-        "release_downloads": "Release Assets & Downloads",
+        "top_referrers": "Top Traffic Sources (Referrers)",
+        "release_downloads": "Release Assets & Download Counters",
         "no_releases": "No releases published yet.",
-        "no_referrers": "No external referrers recorded yet.",
+        "no_referrers": "No external traffic sources recorded yet.",
+        
+        # Dialogs & General
         "token_settings": "GitHub Access Token",
-        "token_hint": "Enter a Personal Access Token with repo read permissions to view page views and referrer analytics:",
+        "token_hint": "Provide a Personal Access Token with repository read permissions to display page views and traffic analytics:",
         "save": "Save",
         "cancel": "Cancel",
         "sound_fx": "Sound Feedback",
-        "token_saved": "Access token saved successfully",
-        "commit_success": "Commit created successfully",
-        "push_success": "Changes pushed to remote",
-        "stash_success": "Working directory stashed",
-        "pop_success": "Stash popped into working directory",
-        "error_commit": "Failed to create commit",
-        "error_push": "Failed to push changes"
+        "btn_refresh": "Refresh",
+        "btn_open_repo": "Open Repository...",
+        "lang_toggle_tooltip": "Switch Language (RU/EN)"
     },
     "ru": {
         "app_title": "GitPulse",
         "app_subtitle": "Git & Telemetry HUD",
-        "tab_changes": "Стейджинг и изменения",
-        "tab_history": "История коммитов",
-        "tab_pulse": "Пульс репозитория",
-        "tab_telemetry": "Телеметрия GitHub",
-        "staged_title": "Подготовленные изменения (Staged)",
-        "unstaged_title": "Изменения рабочей директории",
-        "untracked_title": "Неотслеживаемые файлы",
-        "clean_tree": "Рабочее дерево чисто",
-        "clean_tree_sub": "Нет измененных или новых файлов в репозитории.",
-        "stage_all": "Стейджить всё",
-        "unstage_all": "Снять всё",
-        "commit_builder": "Конструктор коммита",
+        "tab_changes": "Файлы и коммиты",
+        "tab_history": "Журнал изменений",
+        "tab_pulse": "Активность и пульс",
+        "tab_telemetry": "Аналитика GitHub",
+        
+        # Subtitles
+        "sub_changes": "Управление изменениями и подготовка коммитов",
+        "sub_history": "Хронологический список зафиксированных коммитов",
+        "sub_pulse": "Динамика коммитов и интенсивность разработки",
+        "sub_telemetry": "Посещаемость, просмотры и статистика загрузок",
+        
+        # Staging & Working Tree
+        "staged_title": "Подготовленные изменения",
+        "unstaged_title": "Измененные файлы",
+        "untracked_title": "Новые неотслеживаемые файлы",
+        "clean_tree": "Нет изменений для коммита",
+        "clean_tree_sub": "Рабочий каталог полностью синхронизирован.",
+        "stage_all": "Подготовить всё",
+        "unstage_all": "Отменить подготовку",
+        "stash_save": "Спрятать (Stash)",
+        "stash_pop": "Восстановить (Pop)",
+        
+        # Commit Composer
+        "commit_builder": "Параметры коммита",
         "commit_type": "Тип",
-        "commit_scope_placeholder": "скоуп (опц)",
-        "commit_desc_placeholder": "Краткое понятное описание изменений...",
-        "breaking_change": "Ломающее (!)",
-        "btn_commit": "Закоммитить",
-        "btn_commit_push": "Коммит и Пуш",
-        "btn_stash": "В Stash",
-        "btn_pop": "Извлечь Stash",
-        "btn_refresh": "Обновить",
-        "btn_open_repo": "Открыть репозиторий...",
-        "velocity_title": "Скорость коммитов (14 дней)",
-        "punchcard_title": "Распределение активности (24ч)",
+        "commit_scope_placeholder": "Область (необязательно)",
+        "commit_desc_placeholder": "Краткое описание внесенных изменений...",
+        "breaking_change": "Критические изменения (!)",
+        "btn_commit": "Создать коммит",
+        "btn_commit_push": "Коммит и отправка",
+        
+        # Metrics & Pulse
+        "velocity_title": "Динамика коммитов (за последние 14 дней)",
+        "punchcard_title": "Распределение активности по часам суток (24ч)",
         "stat_commits": "Коммитов",
         "stat_contributors": "Авторов",
         "stat_files": "Файлов",
-        "stat_stashes": "В Stash",
+        "stat_stashes": "В тайнике",
         "copy_hash": "Копировать хеш",
-        "hash_copied": "Хеш коммита скопирован в буфер",
-        "views_14d": "Просмотры (14 дн)",
+        "hash_copied": "Хеш коммита скопирован в буфер обмена",
+        
+        # GitHub Analytics
+        "views_14d": "Просмотры страниц",
         "uniques_14d": "Уникальные посетители",
         "stars": "Звёзды",
         "forks": "Форки",
         "downloads": "Скачивания",
-        "open_issues": "Тикеты",
-        "reactions": "Реакции аудитории",
-        "top_referrers": "Источники переходов",
-        "release_downloads": "Файлы релизов и счётчик скачиваний",
+        "open_issues": "Открытые задачи",
+        "reactions": "Реакции сообщества",
+        "top_referrers": "Источники переходов (Откуда приходят пользователи)",
+        "release_downloads": "Файлы релизов и счетчики загрузок",
         "no_releases": "Опубликованных релизов пока нет.",
         "no_referrers": "Данных о переходах с внешних сайтов пока нет.",
+        
+        # Dialogs & General
         "token_settings": "Токен доступа GitHub",
-        "token_hint": "Укажите Personal Access Token с доступом к repo для просмотра аналитики переходов и посещаемости:",
+        "token_hint": "Укажите Personal Access Token с доступом к репозиторию для просмотра детальной аналитики посещаемости и источников трафика:",
         "save": "Сохранить",
         "cancel": "Отмена",
         "sound_fx": "Звуковой отклик",
-        "token_saved": "Токен GitHub успешно сохранен",
-        "commit_success": "Коммит успешно создан",
-        "push_success": "Изменения отправлены на GitHub",
-        "stash_success": "Изменения сохранены в Stash",
-        "pop_success": "Stash успешно применен",
-        "error_commit": "Не удалось создать коммит",
-        "error_push": "Не удалось отправить изменения"
+        "btn_refresh": "Обновить",
+        "btn_open_repo": "Открыть репозиторий...",
+        "lang_toggle_tooltip": "Сменить язык (RU/EN)"
     }
 }
 

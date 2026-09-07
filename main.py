@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GitPulse HUD — AAA Grade GTK4 / Libadwaita Git Companion
+GitPulse HUD — Professional GTK4 / Libadwaita Git Companion
 Author: Xronni (https://github.com/Xronni)
 """
 
@@ -72,6 +72,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.selected_type = "feat"
 
         self._build_main_layout()
+        self._update_all_strings()
         self._load_repo_data()
 
     def _load_config(self):
@@ -101,10 +102,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         root_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.set_child(root_box)
 
-        # 1. Left Sidebar
+        # 1. Left Navigation Sidebar
         self._build_sidebar(root_box)
 
-        # 2. Main Content
+        # 2. Main Content Stack
         self.content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.content_box.add_css_class("content-area")
         self.content_box.set_hexpand(True)
@@ -128,12 +129,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         sidebar.set_size_request(240, -1)
         parent.append(sidebar)
 
-        # Brand Header with crisp full-bleed icon
+        # Brand Header with clean transparent squircle icon
         brand_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         if os.path.exists(ICON_FILE):
             icon_img = Gtk.Image.new_from_file(ICON_FILE)
             icon_img.set_pixel_size(36)
-            icon_img.add_css_class("brand-icon")
             brand_row.append(icon_img)
 
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -148,15 +148,15 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_t.append(lbl_badge)
         title_box.append(top_t)
 
-        lbl_sub = Gtk.Label(label="Git Staging & Telemetry")
-        lbl_sub.add_css_class("brand-subtitle")
-        lbl_sub.set_xalign(0)
-        title_box.append(lbl_sub)
+        self.lbl_sub = Gtk.Label(label=t("app_subtitle"))
+        self.lbl_sub.add_css_class("brand-subtitle")
+        self.lbl_sub.set_xalign(0)
+        title_box.append(self.lbl_sub)
 
         brand_row.append(title_box)
         sidebar.append(brand_row)
 
-        # Active Repository Card (Clean & Unified)
+        # Active Repository Card
         repo_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         repo_card.add_css_class("sidebar-repo-card")
 
@@ -168,15 +168,14 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.sidebar_repo_name.set_hexpand(True)
         top_r.append(self.sidebar_repo_name)
 
-        btn_open = Gtk.Button()
-        btn_open.set_icon_name("folder-open-symbolic")
-        btn_open.set_tooltip_text(t("btn_open_repo"))
-        btn_open.add_css_class("subtle-icon-btn")
-        btn_open.connect("clicked", self._on_choose_repo)
-        top_r.append(btn_open)
+        self.btn_open_repo = Gtk.Button()
+        self.btn_open_repo.set_icon_name("folder-open-symbolic")
+        self.btn_open_repo.set_tooltip_text(t("btn_open_repo"))
+        self.btn_open_repo.add_css_class("subtle-icon-btn")
+        self.btn_open_repo.connect("clicked", self._on_choose_repo)
+        top_r.append(self.btn_open_repo)
         repo_card.append(top_r)
 
-        # Badges row: branch and ahead/behind
         pills_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.sidebar_branch = Gtk.Label(label=self.git.get_current_branch())
         self.sidebar_branch.add_css_class("branch-badge")
@@ -189,20 +188,20 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         repo_card.append(pills_row)
         sidebar.append(repo_card)
 
-        # Navigation Items
+        # Navigation Buttons
         self.nav_buttons = {}
         items = [
-            ("changes", "document-edit-symbolic", t("tab_changes")),
-            ("history", "document-open-recent-symbolic", t("tab_history")),
-            ("pulse", "utilities-system-monitor-symbolic", t("tab_pulse")),
-            ("telemetry", "network-workgroup-symbolic", t("tab_telemetry")),
+            ("changes", "document-edit-symbolic", "tab_changes"),
+            ("history", "document-open-recent-symbolic", "tab_history"),
+            ("pulse", "utilities-system-monitor-symbolic", "tab_pulse"),
+            ("telemetry", "network-workgroup-symbolic", "tab_telemetry"),
         ]
 
-        for nav_id, icon_name, label_text in items:
+        for nav_id, icon_name, trans_key in items:
             btn = Gtk.Button()
             btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             img = Gtk.Image.new_from_icon_name(icon_name)
-            lbl = Gtk.Label(label=label_text)
+            lbl = Gtk.Label(label=t(trans_key))
             lbl.set_xalign(0)
             lbl.set_hexpand(True)
             btn_box.append(img)
@@ -213,14 +212,13 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 btn.add_css_class("active")
             btn.connect("clicked", lambda b, nid=nav_id: self._switch_nav(nid))
             sidebar.append(btn)
-            self.nav_buttons[nav_id] = (btn, lbl)
+            self.nav_buttons[nav_id] = (btn, lbl, trans_key)
 
-        # Push footer down
         spacer = Gtk.Box()
         spacer.set_vexpand(True)
         sidebar.append(spacer)
 
-        # Bottom Segmented Controls Rail
+        # Footer Segmented Controls
         footer_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         footer_card.add_css_class("sidebar-footer")
 
@@ -233,34 +231,34 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         footer_card.append(self.btn_sound)
 
         self.btn_lang = Gtk.Button(label="RU" if i18n.get_language() == "ru" else "EN")
-        self.btn_lang.set_tooltip_text("Switch language / Сменить язык")
+        self.btn_lang.set_tooltip_text(t("lang_toggle_tooltip"))
         self.btn_lang.add_css_class("footer-btn")
         self.btn_lang.set_hexpand(True)
         self.btn_lang.connect("clicked", self._on_toggle_lang)
         footer_card.append(self.btn_lang)
 
-        btn_token = Gtk.Button()
-        btn_token.set_icon_name("dialog-password-symbolic")
-        btn_token.set_tooltip_text(t("token_settings"))
-        btn_token.add_css_class("footer-btn")
-        btn_token.set_hexpand(True)
-        btn_token.connect("clicked", self._on_token_dialog)
-        footer_card.append(btn_token)
+        self.btn_token_cfg = Gtk.Button()
+        self.btn_token_cfg.set_icon_name("dialog-password-symbolic")
+        self.btn_token_cfg.set_tooltip_text(t("token_settings"))
+        self.btn_token_cfg.add_css_class("footer-btn")
+        self.btn_token_cfg.set_hexpand(True)
+        self.btn_token_cfg.connect("clicked", self._on_token_dialog)
+        footer_card.append(self.btn_token_cfg)
 
-        btn_refresh = Gtk.Button()
-        btn_refresh.set_icon_name("view-refresh-symbolic")
-        btn_refresh.set_tooltip_text(t("btn_refresh"))
-        btn_refresh.add_css_class("footer-btn")
-        btn_refresh.set_hexpand(True)
-        btn_refresh.connect("clicked", lambda b: self._load_repo_data())
-        footer_card.append(btn_refresh)
+        self.btn_refresh_ui = Gtk.Button()
+        self.btn_refresh_ui.set_icon_name("view-refresh-symbolic")
+        self.btn_refresh_ui.set_tooltip_text(t("btn_refresh"))
+        self.btn_refresh_ui.add_css_class("footer-btn")
+        self.btn_refresh_ui.set_hexpand(True)
+        self.btn_refresh_ui.connect("clicked", lambda b: self._load_repo_data())
+        footer_card.append(self.btn_refresh_ui)
 
         sidebar.append(footer_card)
 
     def _switch_nav(self, nav_id):
         self.active_view = nav_id
         self.sound.play("click")
-        for nid, (btn, lbl) in self.nav_buttons.items():
+        for nid, (btn, lbl, key) in self.nav_buttons.items():
             if nid == nav_id:
                 btn.add_css_class("active")
             else:
@@ -281,12 +279,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        title_box.append(Gtk.Label(label=t("tab_changes"), css_classes=["view-title"], xalign=0))
-        self.lbl_changes_sub = Gtk.Label(
-            label="Управление рабочим деревом и Conventional Commits" if i18n.get_language() == "ru" else "Working tree & conventional commits",
-            css_classes=["view-subtitle"],
-            xalign=0
-        )
+        self.lbl_view1_title = Gtk.Label(label=t("tab_changes"), css_classes=["view-title"], xalign=0)
+        title_box.append(self.lbl_view1_title)
+        self.lbl_changes_sub = Gtk.Label(label=t("sub_changes"), css_classes=["view-subtitle"], xalign=0)
         title_box.append(self.lbl_changes_sub)
         top_row.append(title_box)
 
@@ -294,19 +289,18 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         spacer.set_hexpand(True)
         top_row.append(spacer)
 
-        btn_stash = Gtk.Button(label=t("btn_stash"))
-        btn_stash.add_css_class("subtle-btn")
-        btn_stash.connect("clicked", self._on_stash)
-        top_row.append(btn_stash)
+        self.btn_stash = Gtk.Button(label=t("stash_save"))
+        self.btn_stash.add_css_class("subtle-btn")
+        self.btn_stash.connect("clicked", self._on_stash)
+        top_row.append(self.btn_stash)
 
-        btn_pop = Gtk.Button(label=t("btn_pop"))
-        btn_pop.add_css_class("subtle-btn")
-        btn_pop.connect("clicked", self._on_pop_stash)
-        top_row.append(btn_pop)
+        self.btn_pop = Gtk.Button(label=t("stash_pop"))
+        self.btn_pop.add_css_class("subtle-btn")
+        self.btn_pop.connect("clicked", self._on_pop_stash)
+        top_row.append(self.btn_pop)
 
         page.append(top_row)
 
-        # Scrolled file list
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -319,9 +313,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         commit_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         commit_card.add_css_class("hud-card")
 
-        commit_card.append(Gtk.Label(label=t("commit_builder"), css_classes=["hud-card-header"], xalign=0))
+        self.lbl_composer_hdr = Gtk.Label(label=t("commit_builder"), css_classes=["hud-card-header"], xalign=0)
+        commit_card.append(self.lbl_composer_hdr)
 
-        # Type Chips
+        # Conventional Commit Type Chips
         types_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self.type_chips = {}
         conventional_types = ["feat", "fix", "refactor", "docs", "perf", "chore", "test", "style"]
@@ -342,11 +337,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         commit_card.append(types_row)
 
-        # Scope & Desc
         input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.entry_scope = Gtk.Entry()
         self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
-        self.entry_scope.set_width_chars(14)
+        self.entry_scope.set_width_chars(16)
         self.entry_scope.connect("changed", lambda *a: self._update_commit_preview())
         input_row.append(self.entry_scope)
 
@@ -359,7 +353,6 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         commit_card.append(input_row)
 
-        # Preview & Actions
         bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.preview_lbl = Gtk.Label(label="feat: ...")
         self.preview_lbl.add_css_class("commit-preview-box")
@@ -367,15 +360,15 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.preview_lbl.set_hexpand(True)
         bottom_row.append(self.preview_lbl)
 
-        btn_commit = Gtk.Button(label=t("btn_commit"))
-        btn_commit.add_css_class("subtle-btn")
-        btn_commit.connect("clicked", lambda b: self._on_commit(push=False))
-        bottom_row.append(btn_commit)
+        self.btn_commit = Gtk.Button(label=t("btn_commit"))
+        self.btn_commit.add_css_class("subtle-btn")
+        self.btn_commit.connect("clicked", lambda b: self._on_commit(push=False))
+        bottom_row.append(self.btn_commit)
 
-        btn_commit_push = Gtk.Button(label=t("btn_commit_push"))
-        btn_commit_push.add_css_class("primary-btn")
-        btn_commit_push.connect("clicked", lambda b: self._on_commit(push=True))
-        bottom_row.append(btn_commit_push)
+        self.btn_commit_push = Gtk.Button(label=t("btn_commit_push"))
+        self.btn_commit_push.add_css_class("primary-btn")
+        self.btn_commit_push.connect("clicked", lambda b: self._on_commit(push=True))
+        bottom_row.append(self.btn_commit_push)
 
         commit_card.append(bottom_row)
         page.append(commit_card)
@@ -409,12 +402,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        title_box.append(Gtk.Label(label=t("tab_history"), css_classes=["view-title"], xalign=0))
-        self.lbl_hist_sub = Gtk.Label(
-            label="Хронология коммитов и изменений" if i18n.get_language() == "ru" else "Chronological timeline of commits",
-            css_classes=["view-subtitle"],
-            xalign=0
-        )
+        self.lbl_view2_title = Gtk.Label(label=t("tab_history"), css_classes=["view-title"], xalign=0)
+        title_box.append(self.lbl_view2_title)
+        self.lbl_hist_sub = Gtk.Label(label=t("sub_history"), css_classes=["view-subtitle"], xalign=0)
         title_box.append(self.lbl_hist_sub)
         top_row.append(title_box)
         page.append(top_row)
@@ -467,12 +457,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        title_box.append(Gtk.Label(label=t("tab_pulse"), css_classes=["view-title"], xalign=0))
-        self.lbl_pulse_sub = Gtk.Label(
-            label="Ритм активности и динамика разработки" if i18n.get_language() == "ru" else "Activity rhythm & repository velocity",
-            css_classes=["view-subtitle"],
-            xalign=0
-        )
+        self.lbl_view3_title = Gtk.Label(label=t("tab_pulse"), css_classes=["view-title"], xalign=0)
+        title_box.append(self.lbl_view3_title)
+        self.lbl_pulse_sub = Gtk.Label(label=t("sub_pulse"), css_classes=["view-subtitle"], xalign=0)
         title_box.append(self.lbl_pulse_sub)
         top_row.append(title_box)
         page.append(top_row)
@@ -485,37 +472,36 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         scrolled.set_child(inner)
 
-        # 4 Hero Metric Cards with proper Russian pluralization and color accents
         stats_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.card_commits = self._make_metric_card("0", t("stat_commits"), accent="#6366f1")
-        self.card_authors = self._make_metric_card("0", t("stat_contributors"), accent="#10b981")
-        self.card_files = self._make_metric_card("0", t("stat_files"), accent="#38bdf8")
-        self.card_stashes = self._make_metric_card("0", t("stat_stashes"), accent="#f59e0b")
+        self.card_commits = self._make_metric_card("0", t("stat_commits"))
+        self.card_authors = self._make_metric_card("0", t("stat_contributors"))
+        self.card_files = self._make_metric_card("0", t("stat_files"))
+        self.card_stashes = self._make_metric_card("0", t("stat_stashes"))
 
         for c in [self.card_commits, self.card_authors, self.card_files, self.card_stashes]:
             c.set_hexpand(True)
             stats_row.append(c)
         inner.append(stats_row)
 
-        # Commit Velocity Chart Card
         vel_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         vel_card.add_css_class("hud-card")
-        vel_card.append(Gtk.Label(label=t("velocity_title"), css_classes=["hud-card-header"], xalign=0))
+        self.lbl_vel_hdr = Gtk.Label(label=t("velocity_title"), css_classes=["hud-card-header"], xalign=0)
+        vel_card.append(self.lbl_vel_hdr)
         self.vel_chart = CommitVelocityWidget()
         vel_card.append(self.vel_chart)
         inner.append(vel_card)
 
-        # 24h Activity Distribution Card
         punch_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         punch_card.add_css_class("hud-card")
-        punch_card.append(Gtk.Label(label=t("punchcard_title"), css_classes=["hud-card-header"], xalign=0))
+        self.lbl_punch_hdr = Gtk.Label(label=t("punchcard_title"), css_classes=["hud-card-header"], xalign=0)
+        punch_card.append(self.lbl_punch_hdr)
         self.punchcard = PunchcardWidget()
         punch_card.append(self.punchcard)
         inner.append(punch_card)
 
         self.stack.add_named(page, "pulse")
 
-    def _make_metric_card(self, value_text, label_text, accent="#6366f1"):
+    def _make_metric_card(self, value_text, label_text):
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         card.add_css_class("metric-card")
         
@@ -547,12 +533,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.card_commits.lbl_widget.set_text(plural_ru(c_count, "коммит", "коммита", "коммитов"))
             self.card_authors.lbl_widget.set_text(plural_ru(a_count, "автор", "автора", "авторов"))
             self.card_files.lbl_widget.set_text(plural_ru(f_count, "файл", "файла", "файлов"))
-            self.card_stashes.lbl_widget.set_text(plural_ru(s_count, "в stash", "в stash", "в stash"))
+            self.card_stashes.lbl_widget.set_text(plural_ru(s_count, "в тайнике", "в тайнике", "в тайнике"))
         else:
             self.card_commits.lbl_widget.set_text("Commits")
-            self.card_authors.lbl_widget.set_text("Contributors")
+            self.card_authors.lbl_widget.set_text("Authors")
             self.card_files.lbl_widget.set_text("Files")
-            self.card_stashes.lbl_widget.set_text("Stashes")
+            self.card_stashes.lbl_widget.set_text("In Stash")
 
         self.vel_chart.set_data(self.git.get_commit_velocity(14))
         self.punchcard.set_hours(self.git.get_punchcard())
@@ -564,12 +550,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        title_box.append(Gtk.Label(label=t("tab_telemetry"), css_classes=["view-title"], xalign=0))
-        self.lbl_telem_sub = Gtk.Label(
-            label="Трафик, уникальные посетители и скачивания релизов" if i18n.get_language() == "ru" else "Traffic, unique visitors & release downloads",
-            css_classes=["view-subtitle"],
-            xalign=0
-        )
+        self.lbl_view4_title = Gtk.Label(label=t("tab_telemetry"), css_classes=["view-title"], xalign=0)
+        title_box.append(self.lbl_view4_title)
+        self.lbl_telem_sub = Gtk.Label(label=t("sub_telemetry"), css_classes=["view-subtitle"], xalign=0)
         title_box.append(self.lbl_telem_sub)
         top_row.append(title_box)
 
@@ -577,10 +560,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         spacer.set_hexpand(True)
         top_row.append(spacer)
 
-        btn_tok = Gtk.Button(label=t("token_settings"))
-        btn_tok.add_css_class("subtle-btn")
-        btn_tok.connect("clicked", self._on_token_dialog)
-        top_row.append(btn_tok)
+        self.btn_tok = Gtk.Button(label=t("token_settings"))
+        self.btn_tok.add_css_class("subtle-btn")
+        self.btn_tok.connect("clicked", self._on_token_dialog)
+        top_row.append(self.btn_tok)
 
         page.append(top_row)
 
@@ -592,7 +575,6 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         scrolled.set_child(inner)
 
-        # 6 Hero Telemetry Cards
         metrics_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.ins_views = self._make_metric_card("—", t("views_14d"))
         self.ins_uniques = self._make_metric_card("—", t("uniques_14d"))
@@ -606,13 +588,13 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             metrics_row.append(c)
         inner.append(metrics_row)
 
-        # Middle Row: Traffic Chart & Reactions
         mid_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
 
         chart_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         chart_card.add_css_class("hud-card")
         chart_card.set_hexpand(True)
-        chart_card.append(Gtk.Label(label="14-Day Traffic & Unique Visitors", css_classes=["hud-card-header"], xalign=0))
+        self.lbl_traffic_hdr = Gtk.Label(label="14-Day Traffic & Unique Visitors", css_classes=["hud-card-header"], xalign=0)
+        chart_card.append(self.lbl_traffic_hdr)
         self.views_chart = TrafficViewsChart()
         chart_card.append(self.views_chart)
         mid_row.append(chart_card)
@@ -620,7 +602,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         rx_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         rx_card.add_css_class("hud-card")
         rx_card.set_size_request(240, -1)
-        rx_card.append(Gtk.Label(label=t("reactions"), css_classes=["hud-card-header"], xalign=0))
+        self.lbl_rx_hdr = Gtk.Label(label=t("reactions"), css_classes=["hud-card-header"], xalign=0)
+        rx_card.append(self.lbl_rx_hdr)
 
         rx_grid = Gtk.Grid()
         rx_grid.set_column_spacing(12)
@@ -640,13 +623,13 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         inner.append(mid_row)
 
-        # Bottom Row: Top Referrers & Releases
         bot_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
 
         ref_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         ref_card.add_css_class("hud-card")
         ref_card.set_hexpand(True)
-        ref_card.append(Gtk.Label(label=t("top_referrers"), css_classes=["hud-card-header"], xalign=0))
+        self.lbl_ref_hdr = Gtk.Label(label=t("top_referrers"), css_classes=["hud-card-header"], xalign=0)
+        ref_card.append(self.lbl_ref_hdr)
         self.referrers_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         ref_card.append(self.referrers_container)
         bot_row.append(ref_card)
@@ -654,7 +637,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         rel_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         rel_card.add_css_class("hud-card")
         rel_card.set_hexpand(True)
-        rel_card.append(Gtk.Label(label=t("release_downloads"), css_classes=["hud-card-header"], xalign=0))
+        self.lbl_rel_hdr = Gtk.Label(label=t("release_downloads"), css_classes=["hud-card-header"], xalign=0)
+        rel_card.append(self.lbl_rel_hdr)
         self.releases_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         rel_card.append(self.releases_container)
         bot_row.append(rel_card)
@@ -685,8 +669,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.ins_uniques.val_widget.set_text(str(data["views_uniques"]))
             self.views_chart.set_history(data.get("views_history", []))
         else:
-            self.ins_views.val_widget.set_text("Token Req")
-            self.ins_uniques.val_widget.set_text("Token Req")
+            self.ins_views.val_widget.set_text("—")
+            self.ins_uniques.val_widget.set_text("—")
             self.views_chart.set_history([])
 
         rx = data.get("reactions", {})
@@ -709,7 +693,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 row.append(u_lbl)
                 self.referrers_container.append(row)
         else:
-            msg = t("no_referrers") if data.get("has_traffic_access") else "Configure GitHub token to see referrers"
+            msg = t("no_referrers")
             self.referrers_container.append(Gtk.Label(label=msg, css_classes=["stat-label"], xalign=0))
 
         while child := self.releases_container.get_first_child():
@@ -728,6 +712,55 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     self.releases_container.append(row)
         else:
             self.releases_container.append(Gtk.Label(label=t("no_releases"), css_classes=["stat-label"], xalign=0))
+
+    # --- COMPLETE STRINGS LOCALIZATION ---
+
+    def _update_all_strings(self):
+        # Sidebar
+        self.lbl_sub.set_text(t("app_subtitle"))
+        self.btn_open_repo.set_tooltip_text(t("btn_open_repo"))
+        for nid, (btn, lbl, key) in self.nav_buttons.items():
+            lbl.set_text(t(key))
+        self.btn_sound.set_tooltip_text(t("sound_fx"))
+        self.btn_lang.set_tooltip_text(t("lang_toggle_tooltip"))
+        self.btn_token_cfg.set_tooltip_text(t("token_settings"))
+        self.btn_refresh_ui.set_tooltip_text(t("btn_refresh"))
+
+        # View 1
+        self.lbl_view1_title.set_text(t("tab_changes"))
+        self.lbl_changes_sub.set_text(t("sub_changes"))
+        self.btn_stash.set_label(t("stash_save"))
+        self.btn_pop.set_label(t("stash_pop"))
+        self.lbl_composer_hdr.set_text(t("commit_builder"))
+        self.check_breaking.set_label(t("breaking_change"))
+        self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
+        self.entry_desc.set_placeholder_text(t("commit_desc_placeholder"))
+        self.btn_commit.set_label(t("btn_commit"))
+        self.btn_commit_push.set_label(t("btn_commit_push"))
+
+        # View 2
+        self.lbl_view2_title.set_text(t("tab_history"))
+        self.lbl_hist_sub.set_text(t("sub_history"))
+
+        # View 3
+        self.lbl_view3_title.set_text(t("tab_pulse"))
+        self.lbl_pulse_sub.set_text(t("sub_pulse"))
+        self.lbl_vel_hdr.set_text(t("velocity_title"))
+        self.lbl_punch_hdr.set_text(t("punchcard_title"))
+
+        # View 4
+        self.lbl_view4_title.set_text(t("tab_telemetry"))
+        self.lbl_telem_sub.set_text(t("sub_telemetry"))
+        self.btn_tok.set_label(t("token_settings"))
+        self.ins_views.lbl_widget.set_text(t("views_14d"))
+        self.ins_uniques.lbl_widget.set_text(t("uniques_14d"))
+        self.ins_stars.lbl_widget.set_text(t("stars"))
+        self.ins_forks.lbl_widget.set_text(t("forks"))
+        self.ins_downloads.lbl_widget.set_text(t("downloads"))
+        self.ins_issues.lbl_widget.set_text(t("open_issues"))
+        self.lbl_rx_hdr.set_text(t("reactions"))
+        self.lbl_ref_hdr.set_text(t("top_referrers"))
+        self.lbl_rel_hdr.set_text(t("release_downloads"))
 
     # --- DATA REFRESH ---
 
@@ -798,9 +831,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 self._add_file_row(item, is_staged=False)
 
     def _render_empty_changes(self, title, subtitle):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        box.set_margin_top(60)
-        box.set_margin_bottom(60)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.set_margin_top(70)
+        box.set_margin_bottom(70)
         t_lbl = Gtk.Label(label=title, css_classes=["view-title"])
         box.append(t_lbl)
         s_lbl = Gtk.Label(label=subtitle, css_classes=["view-subtitle"])
@@ -948,6 +981,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     self.config["last_repo"] = path
                     self._save_config()
                     self._load_repo_data()
+                    if self.active_view == "pulse":
+                        self._refresh_pulse_view()
+                    elif self.active_view == "history":
+                        self._refresh_history_view()
+                    elif self.active_view == "telemetry":
+                        self._refresh_telemetry_view()
                 else:
                     self.sound.play("error")
         except Exception:
@@ -969,27 +1008,21 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_lang.set_label("RU" if new_lang == "ru" else "EN")
         self.sound.play("click")
 
-        # Update sidebar labels
-        self.nav_buttons["changes"][1].set_text(t("tab_changes"))
-        self.nav_buttons["history"][1].set_text(t("tab_history"))
-        self.nav_buttons["pulse"][1].set_text(t("tab_pulse"))
-        self.nav_buttons["telemetry"][1].set_text(t("tab_telemetry"))
-
-        # Update subtitles
-        self.lbl_changes_sub.set_text("Управление рабочим деревом и Conventional Commits" if new_lang == "ru" else "Working tree & conventional commits")
-        self.lbl_hist_sub.set_text("Хронология коммитов и изменений" if new_lang == "ru" else "Chronological timeline of commits")
-        self.lbl_pulse_sub.set_text("Ритм активности и динамика разработки" if new_lang == "ru" else "Activity rhythm & repository velocity")
-        self.lbl_telem_sub.set_text("Трафик, уникальные посетители и скачивания релизов" if new_lang == "ru" else "Traffic, unique visitors & release downloads")
-
+        # Synchronously re-localize ALL text widgets across every screen
+        self._update_all_strings()
         self._load_repo_data()
         if self.active_view == "pulse":
             self._refresh_pulse_view()
+        elif self.active_view == "history":
+            self._refresh_history_view()
+        elif self.active_view == "telemetry":
+            self._refresh_telemetry_view()
 
     def _on_token_dialog(self, btn):
         self.sound.play("click")
         dlg = Gtk.Window(transient_for=self, modal=True)
         dlg.set_title(t("token_settings"))
-        dlg.set_default_size(480, 200)
+        dlg.set_default_size(520, 200)
         dlg.add_css_class("token-modal-window")
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
