@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-GitPulse HUD — Diff Viewer Dialog
-Displays color-coded inline diff with additions, deletions, and quick stage actions.
+GitPulse HUD — Clean GitHub/VSCode Style Diff Viewer
 """
 
 import gi
@@ -14,8 +13,8 @@ class DiffViewerDialog(Gtk.Window):
     def __init__(self, parent, filename, diff_text, is_staged=False, on_stage_toggle=None):
         super().__init__(transient_for=parent, modal=True)
         self.set_title(f"Diff — {filename}")
-        self.set_default_size(700, 500)
-        self.add_css_class("diff-dialog")
+        self.set_default_size(780, 540)
+        self.add_css_class("diff-window-view")
 
         self.filename = filename
         self.is_staged = is_staged
@@ -26,7 +25,10 @@ class DiffViewerDialog(Gtk.Window):
 
         # Header Bar
         header = Adw.HeaderBar()
-        title_widget = Adw.WindowTitle(title=filename, subtitle="Staged Diff" if is_staged else "Working Tree Diff")
+        title_widget = Adw.WindowTitle(
+            title=filename,
+            subtitle="Staged in Index" if is_staged else "Unstaged Working Tree Changes"
+        )
         header.set_title_widget(title_widget)
 
         # Quick action button in header
@@ -41,7 +43,6 @@ class DiffViewerDialog(Gtk.Window):
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_hexpand(True)
-        scrolled.add_css_class("diff-scroll")
         main_box.append(scrolled)
 
         # Text View for diff
@@ -49,27 +50,25 @@ class DiffViewerDialog(Gtk.Window):
         text_view.set_editable(False)
         text_view.set_cursor_visible(False)
         text_view.set_monospace(True)
-        text_view.set_left_margin(12)
-        text_view.set_right_margin(12)
-        text_view.set_top_margin(10)
-        text_view.set_bottom_margin(10)
-        text_view.add_css_class("diff-text-view")
+        text_view.set_left_margin(16)
+        text_view.set_right_margin(16)
+        text_view.set_top_margin(12)
+        text_view.set_bottom_margin(12)
         scrolled.set_child(text_view)
 
         buffer = text_view.get_buffer()
         self._populate_diff(buffer, diff_text)
 
     def _populate_diff(self, buffer, diff_text):
-        # Create text tags for coloring
-        tag_add = buffer.create_tag("add", foreground="#4ade80", background="rgba(34, 197, 94, 0.12)")
-        tag_del = buffer.create_tag("del", foreground="#f87171", background="rgba(239, 68, 68, 0.12)")
-        tag_hunk = buffer.create_tag("hunk", foreground="#38bdf8", weight=Pango.Weight.BOLD)
-        tag_header = buffer.create_tag("header", foreground="#94a3b8", weight=Pango.Weight.BOLD)
+        tag_add = buffer.create_tag("add", foreground="#3fb950", background="rgba(46, 160, 67, 0.15)")
+        tag_del = buffer.create_tag("del", foreground="#f85149", background="rgba(248, 81, 73, 0.15)")
+        tag_hunk = buffer.create_tag("hunk", foreground="#58a6ff", weight=Pango.Weight.BOLD)
+        tag_header = buffer.create_tag("header", foreground="#8b949e", weight=Pango.Weight.BOLD)
 
         lines = diff_text.splitlines()
         if not lines:
             iter_end = buffer.get_end_iter()
-            buffer.insert(iter_end, "(No changes detected or binary file)")
+            buffer.insert(iter_end, "(No differences detected or binary file)")
             return
 
         for line in lines:

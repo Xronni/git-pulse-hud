@@ -1,226 +1,273 @@
-/* GitPulse HUD — Modern Translucent Libadwaita Theme */
+/* GitPulse HUD — Professional Libadwaita Dark Theme */
 
 window.git-pulse-window {
-    background-color: transparent;
-    background: transparent;
+    background-color: #0f1015;
+    color: #e2e8f0;
 }
 
-/* Translucent Glassmorphic Card Container */
-.git-pulse-card {
-    background-color: rgba(18, 18, 24, 0.90);
-    border-radius: 20px;
-    padding: 12px 16px 14px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+/* Sidebar Styling */
+.sidebar-box {
+    background-color: #14151c;
+    border-right: 1px solid rgba(255, 255, 255, 0.07);
+    padding: 18px 14px;
 }
 
-/* Header & Navigation */
-.header-box {
-    margin-bottom: 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.repo-badge {
-    background: rgba(99, 102, 241, 0.15);
-    color: #818cf8;
-    border: 1px solid rgba(99, 102, 241, 0.25);
-    border-radius: 9999px;
-    padding: 3px 10px;
-    font-weight: 700;
-    font-size: 12px;
-}
-
-.branch-pill {
-    background: rgba(34, 197, 94, 0.12);
-    color: #4ade80;
-    border: 1px solid rgba(34, 197, 94, 0.20);
-    border-radius: 9999px;
-    padding: 3px 9px;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.ahead-behind-pill {
-    background: rgba(255, 255, 255, 0.05);
-    color: #94a3b8;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 9999px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-family: monospace;
-}
-
-/* Tab Switcher Bar */
-.nav-tab-box {
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 12px;
-    padding: 3px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.nav-tab-btn {
-    border-radius: 9px;
-    padding: 5px 14px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #94a3b8;
-    background: transparent;
-    border: none;
-    transition: all 180ms ease-in-out;
-}
-
-.nav-tab-btn:hover {
-    color: #f1f5f9;
-    background: rgba(255, 255, 255, 0.06);
-}
-
-.nav-tab-btn.active {
-    background: rgba(99, 102, 241, 0.25);
-    color: #c7d2fe;
-    border: 1px solid rgba(99, 102, 241, 0.35);
-}
-
-/* Staging File Rows */
-.file-row {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
-    padding: 6px 10px;
-    margin-bottom: 4px;
-    transition: all 150ms ease;
-}
-
-.file-row:hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 255, 255, 0.12);
-}
-
-.badge-status-m {
-    color: #fbbf24;
-    background: rgba(251, 191, 36, 0.15);
-    border-radius: 6px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.badge-status-a {
-    color: #34d399;
-    background: rgba(52, 211, 153, 0.15);
-    border-radius: 6px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.badge-status-d {
-    color: #f87171;
-    background: rgba(248, 113, 113, 0.15);
-    border-radius: 6px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.badge-add {
-    color: #4ade80;
-    font-size: 11px;
-    font-family: monospace;
-}
-
-.badge-del {
-    color: #f87171;
-    font-size: 11px;
-    font-family: monospace;
-}
-
-/* Conventional Commit Card */
-.commit-card {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 14px;
-    padding: 12px;
-    margin-top: 8px;
-}
-
-.preview-pill {
-    background: rgba(15, 23, 42, 0.7);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: 8px;
-    padding: 8px 12px;
-    font-family: monospace;
-    font-size: 12px;
-    color: #38bdf8;
-}
-
-/* Stat Cards in Pulse & Insights */
-.stat-card {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: 14px;
-    padding: 10px 14px;
-    min-width: 90px;
-}
-
-.stat-value {
-    font-size: 20px;
+.brand-title {
+    font-size: 15px;
     font-weight: 800;
+    letter-spacing: 0.5px;
     color: #f8fafc;
 }
 
-.stat-label {
-    font-size: 11px;
-    color: #94a3b8;
-}
-
-/* Traffic & Referrer Rows */
-.referrer-row {
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-    padding: 6px 10px;
-    margin-bottom: 4px;
-}
-
-.referrer-badge {
-    background: rgba(56, 189, 248, 0.12);
+.brand-badge {
+    background: rgba(56, 189, 248, 0.15);
     color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+/* Repo Card in Sidebar */
+.sidebar-repo-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-top: 14px;
+    margin-bottom: 16px;
+}
+
+.repo-name-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.branch-badge {
+    background: rgba(34, 197, 94, 0.12);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.20);
     border-radius: 6px;
     padding: 2px 7px;
     font-size: 11px;
     font-weight: 600;
 }
 
-.release-asset-row {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
-    padding: 6px 10px;
-    margin-bottom: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+.ahead-badge {
+    background: rgba(255, 255, 255, 0.06);
+    color: #94a3b8;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: monospace;
 }
 
-/* Icon Buttons in top bar */
-.icon-btn {
-    border-radius: 9999px;
-    min-width: 28px;
-    min-height: 28px;
-    padding: 3px;
+/* Sidebar Navigation Items */
+.nav-btn {
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: transparent;
+    border: none;
+    transition: all 150ms ease;
+    margin-bottom: 3px;
+}
+
+.nav-btn:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-btn.active {
+    background: rgba(99, 102, 241, 0.20);
+    color: #818cf8;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+}
+
+/* Main Content Area */
+.content-area {
+    background-color: #0f1015;
+    padding: 22px 24px;
+}
+
+.view-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.2px;
+}
+
+.view-subtitle {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+/* Cards & Groups */
+.hud-card {
+    background-color: #171821;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+}
+
+.hud-card-header {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
+/* File Row */
+.file-item-row {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 5px;
+    transition: all 120ms ease;
+}
+
+.file-item-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.10);
+}
+
+.status-tag {
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 5px;
+    padding: 2px 6px;
+}
+
+.status-mod {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}
+
+.status-add {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+}
+
+.status-del {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+}
+
+.line-add {
+    color: #4ade80;
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 600;
+}
+
+.line-del {
+    color: #f87171;
+    font-size: 11px;
+    font-family: monospace;
+    font-weight: 600;
+}
+
+/* Conventional Commit Type Chips */
+.chip-btn {
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.04);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    transition: all 120ms ease;
+}
+
+.chip-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f1f5f9;
+}
+
+.chip-btn.active {
+    background: rgba(56, 189, 248, 0.20);
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.40);
+}
+
+.commit-preview-box {
+    background: #090a0d;
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #38bdf8;
+}
+
+/* Stat Metric Cards */
+.metric-card {
+    background: #171821;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    padding: 14px 16px;
+    min-width: 120px;
+}
+
+.metric-number {
+    font-size: 24px;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.5px;
+}
+
+.metric-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+    margin-top: 3px;
+}
+
+/* Subtle Action Buttons */
+.subtle-btn {
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
     background: rgba(255, 255, 255, 0.05);
     color: #cbd5e1;
     border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.icon-btn:hover {
-    background: rgba(255, 255, 255, 0.12);
+.subtle-btn:hover {
+    background: rgba(255, 255, 255, 0.10);
     color: #ffffff;
 }
 
-/* Status Bar */
-.status-bar {
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    font-size: 11px;
-    color: #64748b;
+.primary-btn {
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #4f46e5;
+    color: #ffffff;
+    border: none;
+}
+
+.primary-btn:hover {
+    background: #4338ca;
+}
+
+/* Gutter & Diff Window */
+.diff-window-view {
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: monospace;
+    font-size: 12px;
 }
