@@ -54,18 +54,15 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.add_css_class("git-pulse-window")
 
         self.config = self._load_config()
-        i18n.set_language(self.config.get("language", "ru"))
+        i18n.set_language(self.config.get("language", "en"))
 
         self.sound = SoundEngine(enabled=self.config.get("sound_enabled", True))
         
-        initial_repo = self.config.get("last_repo")
-        if not initial_repo or not os.path.exists(initial_repo):
-            initial_repo = os.getcwd()
-        self.git = GitEngine(initial_repo)
-        if not self.git.is_valid():
-            parent_spotify = "/home/xronni/Документы/other/projects/spotify-mini-player"
-            if os.path.exists(parent_spotify):
-                self.git.set_repo(parent_spotify)
+        initial_repo = self.config.get("last_repo", "")
+        if initial_repo and os.path.exists(initial_repo):
+            self.git = GitEngine(initial_repo)
+        else:
+            self.git = GitEngine("")
 
         self.telemetry = GitHubTelemetry(token=self.config.get("github_token", ""))
         self.active_view = "changes"
@@ -75,26 +72,48 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self._update_all_strings()
         self._load_repo_data()
 
+        # Prompt for repo selection on first launch or if repository is not set
+        if not self.config.get("first_run_completed") or not self.git.is_valid():
+            GLib.idle_add(lambda: self._prompt_first_run_repo())
+
+        self.connect("close-request", self._on_window_close)
+
+    def _on_window_close(self, win):
+        self._save_config()
+        return False
+
+    def _prompt_first_run_repo(self):
+        self._on_choose_repo(None)
+
     def _load_config(self):
         os.makedirs(CONFIG_DIR, exist_ok=True)
+        default_cfg = {
+            "last_repo": "",
+            "sound_enabled": True,
+            "language": "en",
+            "github_token": "",
+            "recent_repos": [],
+            "first_run_completed": False
+        }
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {
-            "last_repo": os.getcwd(),
-            "sound_enabled": True,
-            "language": "ru",
-            "github_token": "",
-            "recent_repos": []
-        }
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        default_cfg.update(loaded)
+            except Exception as e:
+                print(f"[Config] Error loading config: {e}")
+        return default_cfg
 
     def _save_config(self):
         try:
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+            tmp_file = CONFIG_FILE + ".tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, CONFIG_FILE)
         except Exception as e:
             print(f"[Config] Error saving config: {e}")
 
@@ -111,6 +130,17 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.content_box.set_hexpand(True)
         self.content_box.set_vexpand(True)
         root_box.append(self.content_box)
+
+        # Refresh Notification Banner with Spinner
+        self.refresh_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.refresh_banner.add_css_class("refresh-banner")
+        self.refresh_spinner = Gtk.Spinner()
+        self.refresh_banner.append(self.refresh_spinner)
+        self.refresh_lbl = Gtk.Label(label=t("refreshing"))
+        self.refresh_lbl.add_css_class("refresh-banner-text")
+        self.refresh_banner.append(self.refresh_lbl)
+        self.refresh_banner.set_visible(False)
+        self.content_box.append(self.refresh_banner)
 
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
@@ -230,7 +260,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_sound.connect("clicked", self._on_toggle_sound)
         footer_card.append(self.btn_sound)
 
-        self.btn_lang = Gtk.Button(label="RU" if i18n.get_language() == "ru" else "EN")
+        self.btn_lang = Gtk.Button(label="EN" if i18n.get_language() == "en" else "RU")
         self.btn_lang.set_tooltip_text(t("lang_toggle_tooltip"))
         self.btn_lang.add_css_class("footer-btn")
         self.btn_lang.set_hexpand(True)
@@ -246,11 +276,19 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         footer_card.append(self.btn_token_cfg)
 
         self.btn_refresh_ui = Gtk.Button()
-        self.btn_refresh_ui.set_icon_name("view-refresh-symbolic")
         self.btn_refresh_ui.set_tooltip_text(t("btn_refresh"))
         self.btn_refresh_ui.add_css_class("footer-btn")
         self.btn_refresh_ui.set_hexpand(True)
-        self.btn_refresh_ui.connect("clicked", lambda b: self._load_repo_data())
+
+        self.btn_refresh_stack = Gtk.Stack()
+        self.btn_refresh_icon = Gtk.Image.new_from_icon_name("view-refresh-symbolic")
+        self.btn_refresh_spinner = Gtk.Spinner()
+        self.btn_refresh_stack.add_named(self.btn_refresh_icon, "icon")
+        self.btn_refresh_stack.add_named(self.btn_refresh_spinner, "spinner")
+        self.btn_refresh_stack.set_visible_child_name("icon")
+        self.btn_refresh_ui.set_child(self.btn_refresh_stack)
+
+        self.btn_refresh_ui.connect("clicked", lambda b: self._on_refresh_clicked())
         footer_card.append(self.btn_refresh_ui)
 
         sidebar.append(footer_card)
@@ -423,7 +461,37 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         while child := self.history_container.get_first_child():
             self.history_container.remove(child)
 
+        if not self.git.is_valid():
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            box.set_margin_top(60)
+            box.set_margin_bottom(60)
+            box.set_halign(Gtk.Align.CENTER)
+            icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
+            icon.set_pixel_size(44)
+            box.append(icon)
+            lbl = Gtk.Label(label=t("no_repo_title"), css_classes=["view-title"])
+            box.append(lbl)
+            sub = Gtk.Label(label=t("no_repo_desc"), css_classes=["view-subtitle"])
+            box.append(sub)
+            self.history_container.append(box)
+            return
+
         commits = self.git.get_recent_commits(25)
+        if not commits:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            box.set_margin_top(60)
+            box.set_margin_bottom(60)
+            box.set_halign(Gtk.Align.CENTER)
+            icon = Gtk.Image.new_from_icon_name("document-open-recent-symbolic")
+            icon.set_pixel_size(44)
+            box.append(icon)
+            lbl = Gtk.Label(label=t("no_velocity_title"), css_classes=["view-title"])
+            box.append(lbl)
+            sub = Gtk.Label(label=t("no_velocity_desc"), css_classes=["view-subtitle"])
+            box.append(sub)
+            self.history_container.append(box)
+            return
+
         for c in commits:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             row.add_css_class("file-item-row")
@@ -517,6 +585,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _refresh_pulse_view(self):
         if not self.git.is_valid():
+            self.card_commits.val_widget.set_text("—")
+            self.card_authors.val_widget.set_text("—")
+            self.card_files.val_widget.set_text("—")
+            self.card_stashes.val_widget.set_text("—")
+            self.vel_chart.set_data([])
+            self.punchcard.set_hours([0] * 24)
             return
         summary = self.git.get_repo_summary()
         c_count = int(summary["total_commits"])
@@ -588,6 +662,28 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             metrics_row.append(c)
         inner.append(metrics_row)
 
+        # Explanatory Token Banner Card
+        self.token_banner_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        self.token_banner_card.add_css_class("token-banner-card")
+
+        t_icon = Gtk.Image.new_from_icon_name("dialog-information-symbolic")
+        t_icon.set_pixel_size(24)
+        self.token_banner_card.append(t_icon)
+
+        t_textbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        t_textbox.set_hexpand(True)
+        self.lbl_token_banner_title = Gtk.Label(label=t("token_banner_title"), css_classes=["token-banner-title"], xalign=0)
+        self.lbl_token_banner_desc = Gtk.Label(label=t("token_banner_desc"), css_classes=["token-banner-desc"], xalign=0, wrap=True)
+        t_textbox.append(self.lbl_token_banner_title)
+        t_textbox.append(self.lbl_token_banner_desc)
+        self.token_banner_card.append(t_textbox)
+
+        self.btn_token_banner = Gtk.Button(label=t("token_banner_btn"))
+        self.btn_token_banner.add_css_class("primary-btn")
+        self.btn_token_banner.connect("clicked", self._on_token_dialog)
+        self.token_banner_card.append(self.btn_token_banner)
+        inner.append(self.token_banner_card)
+
         mid_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
 
         chart_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -648,8 +744,15 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.stack.add_named(page, "telemetry")
 
     def _refresh_telemetry_view(self):
+        if not self.git.is_valid():
+            self.token_banner_card.set_visible(True)
+            self.views_chart.set_history([])
+            return
+
         owner, repo = self.git.get_github_coords()
         if not owner or not repo:
+            self.token_banner_card.set_visible(True)
+            self.views_chart.set_history([])
             return
 
         def _worker():
@@ -668,10 +771,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.ins_views.val_widget.set_text(str(data["views_total"]))
             self.ins_uniques.val_widget.set_text(str(data["views_uniques"]))
             self.views_chart.set_history(data.get("views_history", []))
+            self.token_banner_card.set_visible(False)
         else:
             self.ins_views.val_widget.set_text("—")
             self.ins_uniques.val_widget.set_text("—")
             self.views_chart.set_history([])
+            self.token_banner_card.set_visible(True)
 
         rx = data.get("reactions", {})
         for key, widget in self.rx_labels.items():
@@ -761,15 +866,65 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_rx_hdr.set_text(t("reactions"))
         self.lbl_ref_hdr.set_text(t("top_referrers"))
         self.lbl_rel_hdr.set_text(t("release_downloads"))
+        self.lbl_token_banner_title.set_text(t("token_banner_title"))
+        self.lbl_token_banner_desc.set_text(t("token_banner_desc"))
+        self.btn_token_banner.set_label(t("token_banner_btn"))
+        self.refresh_lbl.set_text(t("refreshing"))
 
     # --- DATA REFRESH ---
 
+    def _on_refresh_clicked(self):
+        self.sound.play("click")
+        self.btn_refresh_stack.set_visible_child_name("spinner")
+        self.btn_refresh_spinner.start()
+        self.btn_refresh_ui.set_sensitive(False)
+        self.refresh_lbl.set_text(t("refreshing"))
+        self.refresh_banner.set_visible(True)
+        self.refresh_spinner.start()
+
+        def _worker():
+            telem_data = None
+            if self.active_view == "telemetry" and self.git.is_valid():
+                owner, repo = self.git.get_github_coords()
+                if owner and repo:
+                    telem_data = self.telemetry.fetch_full_insights(owner, repo)
+            GLib.idle_add(lambda: self._finish_refresh(telem_data))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _finish_refresh(self, telem_data=None):
+        self._load_repo_data()
+        if self.active_view == "pulse":
+            self._refresh_pulse_view()
+        elif self.active_view == "history":
+            self._refresh_history_view()
+        elif self.active_view == "telemetry":
+            if telem_data is not None:
+                self._apply_telemetry_data(telem_data)
+            else:
+                self._refresh_telemetry_view()
+
+        self.btn_refresh_spinner.stop()
+        self.btn_refresh_stack.set_visible_child_name("icon")
+        self.btn_refresh_ui.set_sensitive(True)
+
+        self.refresh_spinner.stop()
+        self.refresh_lbl.set_text(f"✓ {t('refresh_done')}")
+        self.sound.play("commit")
+
+        def _hide():
+            self.refresh_banner.set_visible(False)
+            self.refresh_lbl.set_text(t("refreshing"))
+            return False
+
+        GLib.timeout_add(1000, _hide)
+
     def _load_repo_data(self):
         if not self.git.is_valid():
-            self.sidebar_repo_name.set_text("No Repository")
+            self.sidebar_repo_name.set_text(t("no_repo_title"))
             self.sidebar_branch.set_text("—")
             self.sidebar_ahead.set_text("—")
-            self._render_empty_changes(t("clean_tree"), t("clean_tree_sub"))
+            self._render_no_repo_placeholder()
             return
 
         self.sidebar_repo_name.set_text(self.git.get_repo_name())
@@ -830,14 +985,54 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             for item in untracked:
                 self._add_file_row(item, is_staged=False)
 
+    def _render_no_repo_placeholder(self):
+        while child := self.files_container.get_first_child():
+            self.files_container.remove(child)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.add_css_class("welcome-placeholder-card")
+        box.set_margin_top(40)
+        box.set_margin_bottom(40)
+        box.set_halign(Gtk.Align.CENTER)
+        box.set_valign(Gtk.Align.CENTER)
+
+        icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
+        icon.set_pixel_size(48)
+        box.append(icon)
+
+        t_lbl = Gtk.Label(label=t("no_repo_title"), css_classes=["view-title"])
+        box.append(t_lbl)
+
+        d_lbl = Gtk.Label(label=t("no_repo_desc"), css_classes=["view-subtitle"], wrap=True)
+        d_lbl.set_max_width_chars(50)
+        box.append(d_lbl)
+
+        btn = Gtk.Button(label=t("btn_open_repo"))
+        btn.add_css_class("primary-btn")
+        btn.connect("clicked", self._on_choose_repo)
+        box.append(btn)
+
+        self.files_container.append(box)
+
     def _render_empty_changes(self, title, subtitle):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.set_margin_top(70)
-        box.set_margin_bottom(70)
+        while child := self.files_container.get_first_child():
+            self.files_container.remove(child)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(60)
+        box.set_margin_bottom(60)
+        box.set_halign(Gtk.Align.CENTER)
+
+        icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
+        icon.set_pixel_size(44)
+        box.append(icon)
+
         t_lbl = Gtk.Label(label=title, css_classes=["view-title"])
         box.append(t_lbl)
+
         s_lbl = Gtk.Label(label=subtitle, css_classes=["view-subtitle"])
         box.append(s_lbl)
+
         self.files_container.append(box)
 
     def _add_file_row(self, item, is_staged):
@@ -979,6 +1174,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 if self.git.set_repo(path):
                     self.sound.play("click")
                     self.config["last_repo"] = path
+                    self.config["first_run_completed"] = True
+                    if "recent_repos" not in self.config or not isinstance(self.config["recent_repos"], list):
+                        self.config["recent_repos"] = []
+                    if path not in self.config["recent_repos"]:
+                        self.config["recent_repos"].insert(0, path)
                     self._save_config()
                     self._load_repo_data()
                     if self.active_view == "pulse":
@@ -989,8 +1189,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                         self._refresh_telemetry_view()
                 else:
                     self.sound.play("error")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Repo] Folder select error: {e}")
 
     def _on_toggle_sound(self, btn):
         self.sound.enabled = not self.sound.enabled
@@ -1005,7 +1205,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         i18n.set_language(new_lang)
         self.config["language"] = new_lang
         self._save_config()
-        self.btn_lang.set_label("RU" if new_lang == "ru" else "EN")
+        self.btn_lang.set_label("EN" if new_lang == "en" else "RU")
         self.sound.play("click")
 
         # Synchronously re-localize ALL text widgets across every screen

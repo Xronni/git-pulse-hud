@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-GitPulse HUD — AAA Grade Vector Cairo Charts
-Minimalist, high-contrast, polished DrawingArea components with value tags and gradients.
+GitPulse HUD — AAA Grade Vector Cairo Charts via Gdk.MemoryTexture
+100% immune to PyGObject foreign struct converter issues.
+High-resolution 2x supersampled vector rendering.
 """
 
 import math
 import cairo
 import gi
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gtk
+gi.require_version('Gdk', '4.0')
+from gi.repository import Gtk, Gdk, GLib
 
 
 def rounded_rectangle(cr, x, y, w, h, r):
@@ -24,44 +26,78 @@ def rounded_rectangle(cr, x, y, w, h, r):
     cr.close_path()
 
 
-class CommitVelocityWidget(Gtk.DrawingArea):
-    def __init__(self):
-        super().__init__()
-        self.set_content_width(500)
-        self.set_content_height(170)
+def surface_to_texture(surface, w, h):
+    surface.flush()
+    data = surface.get_data()
+    glib_bytes = GLib.Bytes.new(data.tobytes())
+    stride = surface.get_stride()
+    return Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.B8G8R8A8_PREMULTIPLIED, glib_bytes, stride)
+
+
+class CommitVelocityWidget(Gtk.Box):
+    def __init__(self, w=640, h=175):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.w = w
+        self.h = h
+        self.scale = 2
         self.data = []
-        self.set_draw_func(self._on_draw)
+        
+        self.picture = Gtk.Picture()
+        self.picture.set_can_shrink(True)
+        self.picture.set_content_fit(Gtk.ContentFit.FILL)
+        self.picture.set_size_request(w, h)
+        self.append(self.picture)
+        
+        self._render()
 
     def set_data(self, data):
         self.data = data or []
-        self.queue_draw()
+        self._render()
 
-    def _on_draw(self, area, cr, width, height):
-        # Subtle inset backdrop
-        rounded_rectangle(cr, 0, 0, width, height, 10)
-        cr.set_source_rgb(0.07, 0.08, 0.11)
+    def _render(self):
+        w, h, s = self.w, self.h, self.scale
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w * s, h * s)
+        cr = cairo.Context(surface)
+        cr.scale(s, s)
+
+        # Inset backdrop
+        rounded_rectangle(cr, 0, 0, w, h, 10)
+        cr.set_source_rgb(0.065, 0.075, 0.10)
         cr.fill_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.05)
         cr.set_line_width(1.0)
         cr.stroke()
 
-        if not self.data:
-            cr.set_source_rgba(0.45, 0.50, 0.60, 0.8)
-            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        counts = [item.get("count", 0) for item in self.data] if self.data else []
+        has_commits = any(c > 0 for c in counts)
+
+        if not self.data or not has_commits:
+            cr.set_source_rgba(0.55, 0.60, 0.72, 0.85)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
             cr.set_font_size(12)
-            msg = "No commit activity recorded in this period"
+            msg = "No commit activity in the last 14 days"
             ext = cr.text_extents(msg)
-            cr.move_to((width - ext.width) / 2, height / 2 + 4)
+            cr.move_to((w - ext.width) / 2, h / 2 - 2)
             cr.show_text(msg)
+
+            cr.set_source_rgba(0.40, 0.45, 0.55, 0.75)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(10)
+            sub = "Activity will appear here as commits are made to this branch"
+            sub_ext = cr.text_extents(sub)
+            cr.move_to((w - sub_ext.width) / 2, h / 2 + 18)
+            cr.show_text(sub)
+
+            tex = surface_to_texture(surface, w * s, h * s)
+            self.picture.set_paintable(tex)
             return
 
         pad_x = 24
         pad_top = 32
         pad_bottom = 26
-        chart_w = width - 2 * pad_x
-        chart_h = height - pad_top - pad_bottom
+        chart_w = w - 2 * pad_x
+        chart_h = h - pad_top - pad_bottom
 
-        counts = [item.get("count", 0) for item in self.data]
         max_count = max(counts) if counts else 1
         if max_count == 0:
             max_count = 1
@@ -72,7 +108,7 @@ class CommitVelocityWidget(Gtk.DrawingArea):
             gy = pad_top + chart_h - g * chart_h
             cr.move_to(pad_x, gy)
             cr.line_to(pad_x + chart_w, gy)
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.03)
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.035)
             cr.stroke()
 
         # Baseline
@@ -83,7 +119,7 @@ class CommitVelocityWidget(Gtk.DrawingArea):
 
         n_bars = len(self.data)
         bar_step = chart_w / n_bars
-        bar_w = max(8, bar_step * 0.55)
+        bar_w = max(10, bar_step * 0.55)
 
         for i, item in enumerate(self.data):
             count = item.get("count", 0)
@@ -95,11 +131,11 @@ class CommitVelocityWidget(Gtk.DrawingArea):
 
             if count > 0:
                 pat = cairo.LinearGradient(bx, by, bx, by + bh)
-                pat.add_color_stop_rgb(0, 0.22, 0.74, 0.97)  # Electric cyan
-                pat.add_color_stop_rgb(1, 0.39, 0.40, 0.95)  # Purple
+                pat.add_color_stop_rgb(0, 0.22, 0.74, 0.97)  # Cyan #38bdf8
+                pat.add_color_stop_rgb(1, 0.39, 0.40, 0.95)  # Indigo #6366f1
                 cr.set_source(pat)
             else:
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.06)
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.05)
 
             cr.fill()
 
@@ -114,56 +150,72 @@ class CommitVelocityWidget(Gtk.DrawingArea):
                 cr.show_text(val_str)
 
             # Date Label below baseline
-            if i % max(1, n_bars // 6) == 0 or i == n_bars - 1:
+            if i % max(1, n_bars // 7) == 0 or i == n_bars - 1:
                 cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
                 cr.set_font_size(9)
                 cr.set_source_rgba(0.50, 0.55, 0.65, 0.9)
                 lbl = item.get("label", "")
                 ext = cr.text_extents(lbl)
-                cr.move_to(bx + bar_w / 2 - ext.width / 2, height - 8)
+                cr.move_to(bx + bar_w / 2 - ext.width / 2, h - 8)
                 cr.show_text(lbl)
 
+        tex = surface_to_texture(surface, w * s, h * s)
+        self.picture.set_paintable(tex)
 
-class PunchcardWidget(Gtk.DrawingArea):
-    def __init__(self):
-        super().__init__()
-        self.set_content_width(500)
-        self.set_content_height(54)
+
+class PunchcardWidget(Gtk.Box):
+    def __init__(self, w=640, h=62):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.w = w
+        self.h = h
+        self.scale = 2
         self.hours = [0] * 24
-        self.set_draw_func(self._on_draw)
+        
+        self.picture = Gtk.Picture()
+        self.picture.set_can_shrink(True)
+        self.picture.set_content_fit(Gtk.ContentFit.FILL)
+        self.picture.set_size_request(w, h)
+        self.append(self.picture)
+        
+        self._render()
 
     def set_hours(self, hours):
         self.hours = hours or [0] * 24
-        self.queue_draw()
+        self._render()
 
-    def _on_draw(self, area, cr, width, height):
-        rounded_rectangle(cr, 0, 0, width, height, 10)
-        cr.set_source_rgb(0.07, 0.08, 0.11)
+    def _render(self):
+        w, h, s = self.w, self.h, self.scale
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w * s, h * s)
+        cr = cairo.Context(surface)
+        cr.scale(s, s)
+
+        rounded_rectangle(cr, 0, 0, w, h, 10)
+        cr.set_source_rgb(0.065, 0.075, 0.10)
         cr.fill_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.05)
         cr.set_line_width(1.0)
         cr.stroke()
 
         pad_x = 20
         pad_y = 10
-        total_w = width - 2 * pad_x
-        cell_h = height - 2 * pad_y - 14
+        total_w = w - 2 * pad_x
+        cell_h = h - 2 * pad_y - 14
         cell_w = total_w / 24
 
         max_val = max(self.hours) if self.hours else 1
         if max_val == 0:
             max_val = 1
 
-        for h in range(24):
-            val = self.hours[h] if h < len(self.hours) else 0
+        for hour in range(24):
+            val = self.hours[hour] if hour < len(self.hours) else 0
             ratio = val / max_val
-            x = pad_x + h * cell_w + 1.5
-            w = max(3, cell_w - 3)
+            x = pad_x + hour * cell_w + 1.5
+            bw = max(4, cell_w - 3)
             y = pad_y
-            rounded_rectangle(cr, x, y, w, cell_h, 2)
+            rounded_rectangle(cr, x, y, bw, cell_h, 3)
 
             if val > 0:
-                alpha = 0.25 + 0.75 * ratio
+                alpha = 0.35 + 0.65 * ratio
                 cr.set_source_rgba(0.13, 0.85, 0.55, alpha)
             else:
                 cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
@@ -173,58 +225,93 @@ class PunchcardWidget(Gtk.DrawingArea):
         cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(9)
         cr.set_source_rgba(0.50, 0.55, 0.65, 0.85)
-        for h in [0, 4, 8, 12, 16, 20, 23]:
-            lbl = f"{h:02d}:00"
+        for hour in [0, 4, 8, 12, 16, 20, 23]:
+            lbl = f"{hour:02d}:00"
             ext = cr.text_extents(lbl)
-            x = pad_x + h * cell_w + (cell_w - ext.width) / 2
-            cr.move_to(x, height - 4)
+            x = pad_x + hour * cell_w + (cell_w - ext.width) / 2
+            cr.move_to(x, h - 5)
             cr.show_text(lbl)
 
+        tex = surface_to_texture(surface, w * s, h * s)
+        self.picture.set_paintable(tex)
 
-class TrafficViewsChart(Gtk.DrawingArea):
-    def __init__(self):
-        super().__init__()
-        self.set_content_width(450)
-        self.set_content_height(160)
+
+class TrafficViewsChart(Gtk.Box):
+    def __init__(self, w=600, h=165):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.w = w
+        self.h = h
+        self.scale = 2
         self.history = []
-        self.set_draw_func(self._on_draw)
+        
+        self.picture = Gtk.Picture()
+        self.picture.set_can_shrink(True)
+        self.picture.set_content_fit(Gtk.ContentFit.FILL)
+        self.picture.set_size_request(w, h)
+        self.append(self.picture)
+        
+        self._render()
 
     def set_history(self, history):
         self.history = history or []
-        self.queue_draw()
+        self._render()
 
-    def _on_draw(self, area, cr, width, height):
-        rounded_rectangle(cr, 0, 0, width, height, 10)
-        cr.set_source_rgb(0.07, 0.08, 0.11)
+    def _render(self):
+        w, h, s = self.w, self.h, self.scale
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w * s, h * s)
+        cr = cairo.Context(surface)
+        cr.scale(s, s)
+
+        rounded_rectangle(cr, 0, 0, w, h, 10)
+        cr.set_source_rgb(0.065, 0.075, 0.10)
         cr.fill_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.05)
         cr.set_line_width(1.0)
         cr.stroke()
 
         if not self.history:
-            cr.set_source_rgba(0.45, 0.50, 0.60, 0.8)
-            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.set_source_rgba(0.55, 0.60, 0.72, 0.85)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
             cr.set_font_size(12)
-            msg = "Configure GitHub Token to display 14-day traffic trend"
+            msg = "Configure GitHub Access Token to view 14-day traffic trend"
             ext = cr.text_extents(msg)
-            cr.move_to((width - ext.width) / 2, height / 2 + 4)
+            cr.move_to((w - ext.width) / 2, h / 2 - 2)
             cr.show_text(msg)
+
+            cr.set_source_rgba(0.40, 0.45, 0.55, 0.75)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(10)
+            sub = "Page views and visitor telemetry require repository access permissions"
+            sub_ext = cr.text_extents(sub)
+            cr.move_to((w - sub_ext.width) / 2, h / 2 + 18)
+            cr.show_text(sub)
+
+            tex = surface_to_texture(surface, w * s, h * s)
+            self.picture.set_paintable(tex)
             return
 
         pad_x = 24
-        pad_top = 32
+        pad_top = 34
         pad_bottom = 24
-        chart_w = width - 2 * pad_x
-        chart_h = height - pad_top - pad_bottom
+        chart_w = w - 2 * pad_x
+        chart_h = h - pad_top - pad_bottom
 
-        max_views = max([x.get("count", 0) for x in self.history] or [1])
-        if max_views == 0:
-            max_views = 1
+        counts = [x.get("count", 0) for x in self.history] or [0]
+        uniques = [x.get("uniques", 0) for x in self.history] or [0]
+        max_views = max(max(counts), max(uniques), 1)
 
         n_pts = len(self.history)
         step = chart_w / max(1, n_pts - 1)
 
-        # Baseline
+        # Baseline & grid
+        cr.set_line_width(0.8)
+        for g in [0.5, 1.0]:
+            gy = pad_top + chart_h - g * chart_h
+            cr.move_to(pad_x, gy)
+            cr.line_to(pad_x + chart_w, gy)
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.035)
+            cr.stroke()
+
         cr.move_to(pad_x, pad_top + chart_h)
         cr.line_to(pad_x + chart_w, pad_top + chart_h)
         cr.set_source_rgba(1.0, 1.0, 1.0, 0.08)
@@ -241,7 +328,7 @@ class TrafficViewsChart(Gtk.DrawingArea):
         cr.close_path()
 
         pat = cairo.LinearGradient(0, pad_top, 0, pad_top + chart_h)
-        pat.add_color_stop_rgba(0, 0.13, 0.85, 0.55, 0.35)
+        pat.add_color_stop_rgba(0, 0.13, 0.85, 0.55, 0.30)
         pat.add_color_stop_rgba(1, 0.13, 0.85, 0.55, 0.02)
         cr.set_source(pat)
         cr.fill_preserve()
@@ -264,16 +351,19 @@ class TrafficViewsChart(Gtk.DrawingArea):
         cr.stroke()
 
         # Legend
-        cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
         cr.set_font_size(10)
         cr.set_source_rgba(0.13, 0.85, 0.55, 0.95)
-        cr.arc(pad_x + 6, 16, 3, 0, 2 * math.pi)
+        cr.arc(pad_x + 6, 17, 3.5, 0, 2 * math.pi)
         cr.fill()
-        cr.move_to(pad_x + 14, 19)
+        cr.move_to(pad_x + 15, 20)
         cr.show_text("Page Views")
 
         cr.set_source_rgba(0.22, 0.74, 0.97, 0.95)
-        cr.arc(pad_x + 100, 16, 3, 0, 2 * math.pi)
+        cr.arc(pad_x + 110, 17, 3.5, 0, 2 * math.pi)
         cr.fill()
-        cr.move_to(pad_x + 108, 19)
+        cr.move_to(pad_x + 119, 20)
         cr.show_text("Unique Visitors")
+
+        tex = surface_to_texture(surface, w * s, h * s)
+        self.picture.set_paintable(tex)

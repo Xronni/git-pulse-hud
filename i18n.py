@@ -2,6 +2,7 @@
 """
 GitPulse HUD — Standard Official Localization (EN / RU)
 Clean, professional developer terminology matching JetBrains & GitHub Desktop standards.
+Default language: EN
 """
 
 TRANSLATIONS = {
@@ -48,6 +49,9 @@ TRANSLATIONS = {
         "stat_stashes": "In Stash",
         "copy_hash": "Copy Hash",
         "hash_copied": "Commit hash copied to clipboard",
+        "no_velocity_title": "No Recent Commit Activity",
+        "no_velocity_desc": "No commits were recorded in the last 14 days in this branch.",
+        "no_punchcard_desc": "No commit timestamps recorded in the selected period.",
         
         # GitHub Analytics
         "views_14d": "Page Views",
@@ -59,8 +63,12 @@ TRANSLATIONS = {
         "reactions": "Community Reactions",
         "top_referrers": "Top Traffic Sources (Referrers)",
         "release_downloads": "Release Assets & Download Counters",
-        "no_releases": "No releases published yet.",
+        "no_releases": "No releases published yet on this repository.",
         "no_referrers": "No external traffic sources recorded yet.",
+        "traffic_no_data": "Traffic stats are updated by GitHub once daily.",
+        "token_banner_title": "GitHub Access Token Required",
+        "token_banner_desc": "To display 14-day page views, unique visitors, and referrer domains (Telegram, Habr, Reddit, Google), configure a GitHub Personal Access Token with repo access.",
+        "token_banner_btn": "Configure Token",
         
         # Dialogs & General
         "token_settings": "GitHub Access Token",
@@ -69,8 +77,16 @@ TRANSLATIONS = {
         "cancel": "Cancel",
         "sound_fx": "Sound Feedback",
         "btn_refresh": "Refresh",
+        "refreshing": "Updating repository data...",
+        "refresh_done": "Up to date",
         "btn_open_repo": "Open Repository...",
-        "lang_toggle_tooltip": "Switch Language (RU/EN)"
+        "lang_toggle_tooltip": "Switch Language (EN/RU)",
+        
+        # Empty / Welcome State
+        "no_repo_title": "No Repository Selected",
+        "no_repo_desc": "Open a local Git repository to start staging changes, inspecting commits, and viewing analytics.",
+        "welcome_title": "Welcome to GitPulse HUD",
+        "welcome_desc": "Please select a Git repository on your system to begin."
     },
     "ru": {
         "app_title": "GitPulse",
@@ -115,6 +131,9 @@ TRANSLATIONS = {
         "stat_stashes": "В тайнике",
         "copy_hash": "Копировать хеш",
         "hash_copied": "Хеш коммита скопирован в буфер обмена",
+        "no_velocity_title": "Нет недавней активности",
+        "no_velocity_desc": "За последние 14 дней в этой ветке не зафиксировано коммитов.",
+        "no_punchcard_desc": "Нет данных о времени коммитов за выбранный период.",
         
         # GitHub Analytics
         "views_14d": "Просмотры страниц",
@@ -126,8 +145,12 @@ TRANSLATIONS = {
         "reactions": "Реакции сообщества",
         "top_referrers": "Источники переходов (Откуда приходят пользователи)",
         "release_downloads": "Файлы релизов и счетчики загрузок",
-        "no_releases": "Опубликованных релизов пока нет.",
+        "no_releases": "Опубликованных релизов пока нет в этом репозитории.",
         "no_referrers": "Данных о переходах с внешних сайтов пока нет.",
+        "traffic_no_data": "Статистика трафика обновляется GitHub раз в сутки.",
+        "token_banner_title": "Требуется токен доступа GitHub",
+        "token_banner_desc": "Для просмотра графиков посещаемости за 14 дней, уникальных посетителей и источников трафика (Telegram, Habr, Reddit, Google) укажите GitHub Personal Access Token.",
+        "token_banner_btn": "Настроить токен",
         
         # Dialogs & General
         "token_settings": "Токен доступа GitHub",
@@ -136,12 +159,20 @@ TRANSLATIONS = {
         "cancel": "Отмена",
         "sound_fx": "Звуковой отклик",
         "btn_refresh": "Обновить",
+        "refreshing": "Обновление данных репозитория...",
+        "refresh_done": "Данные обновлены",
         "btn_open_repo": "Открыть репозиторий...",
-        "lang_toggle_tooltip": "Сменить язык (RU/EN)"
+        "lang_toggle_tooltip": "Сменить язык (EN/RU)",
+        
+        # Empty / Welcome State
+        "no_repo_title": "Репозиторий не выбран",
+        "no_repo_desc": "Выберите локальный Git-репозиторий для подготовки коммитов, просмотра истории и аналитики.",
+        "welcome_title": "Добро пожаловать в GitPulse HUD",
+        "welcome_desc": "Пожалуйста, выберите Git-репозиторий для начала работы."
     }
 }
 
-CURRENT_LANG = "ru"
+CURRENT_LANG = "en"
 
 def set_language(lang):
     global CURRENT_LANG
