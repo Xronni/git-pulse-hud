@@ -41,7 +41,7 @@ TRANSLATIONS = {
         "btn_commit_push": "Commit & Push",
         
         # Metrics & Pulse
-        "velocity_title": "Commit Velocity (Last 14 Days)",
+        "velocity_title": "Commit Velocity (14 Days)",
         "punchcard_title": "24-Hour Activity Heatmap",
         "stat_commits": "Commits",
         "stat_contributors": "Authors",
@@ -54,15 +54,15 @@ TRANSLATIONS = {
         "no_punchcard_desc": "No commit timestamps recorded in the selected period.",
         
         # GitHub Analytics
-        "views_14d": "Page Views",
-        "uniques_14d": "Unique Visitors",
+        "views_14d": "Views",
+        "uniques_14d": "Visitors",
         "stars": "Stars",
         "forks": "Forks",
         "downloads": "Downloads",
-        "open_issues": "Open Issues",
+        "open_issues": "Issues",
         "reactions": "Community Reactions",
-        "top_referrers": "Top Traffic Sources (Referrers)",
-        "release_downloads": "Release Assets & Download Counters",
+        "top_referrers": "Top Traffic Sources",
+        "release_downloads": "Release Assets",
         "no_releases": "No releases published yet on this repository.",
         "no_referrers": "No external traffic sources recorded yet.",
         "traffic_no_data": "Traffic stats are updated by GitHub once daily.",
@@ -123,8 +123,8 @@ TRANSLATIONS = {
         "btn_commit_push": "Коммит и отправка",
         
         # Metrics & Pulse
-        "velocity_title": "Динамика коммитов (за последние 14 дней)",
-        "punchcard_title": "Распределение активности по часам суток (24ч)",
+        "velocity_title": "Динамика коммитов (14 дней)",
+        "punchcard_title": "Распределение активности (24ч)",
         "stat_commits": "Коммитов",
         "stat_contributors": "Авторов",
         "stat_files": "Файлов",
@@ -136,15 +136,15 @@ TRANSLATIONS = {
         "no_punchcard_desc": "Нет данных о времени коммитов за выбранный период.",
         
         # GitHub Analytics
-        "views_14d": "Просмотры страниц",
-        "uniques_14d": "Уникальные посетители",
+        "views_14d": "Просмотры",
+        "uniques_14d": "Посетители",
         "stars": "Звёзды",
         "forks": "Форки",
-        "downloads": "Скачивания",
-        "open_issues": "Открытые задачи",
+        "downloads": "Загрузки",
+        "open_issues": "Задачи",
         "reactions": "Реакции сообщества",
-        "top_referrers": "Источники переходов (Откуда приходят пользователи)",
-        "release_downloads": "Файлы релизов и счетчики загрузок",
+        "top_referrers": "Источники трафика (Рефереры)",
+        "release_downloads": "Файлы релизов",
         "no_releases": "Опубликованных релизов пока нет в этом репозитории.",
         "no_referrers": "Данных о переходах с внешних сайтов пока нет.",
         "traffic_no_data": "Статистика трафика обновляется GitHub раз в сутки.",

@@ -50,11 +50,15 @@ class GitPulseWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
         self.set_title("GitPulse")
-        self.set_default_size(980, 680)
-        self.add_css_class("git-pulse-window")
 
         self.config = self._load_config()
         i18n.set_language(self.config.get("language", "en"))
+
+        win_w = self.config.get("window_width", 980)
+        win_h = self.config.get("window_height", 680)
+        self.set_default_size(max(980, win_w), max(680, win_h))
+        self.set_size_request(940, 620)
+        self.add_css_class("git-pulse-window")
 
         self.sound = SoundEngine(enabled=self.config.get("sound_enabled", True))
         
@@ -68,6 +72,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.active_view = "changes"
         self.selected_type = "feat"
 
+        self._refresh_timer_id = None
+        self._refresh_finish_timer_id = None
+
         self._build_main_layout()
         self._update_all_strings()
         self._load_repo_data()
@@ -79,6 +86,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.connect("close-request", self._on_window_close)
 
     def _on_window_close(self, win):
+        curr_w = self.get_width()
+        curr_h = self.get_height()
+        if curr_w >= 900 and curr_h >= 600:
+            self.config["window_width"] = curr_w
+            self.config["window_height"] = curr_h
         self._save_config()
         return False
 
@@ -93,7 +105,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             "language": "en",
             "github_token": "",
             "recent_repos": [],
-            "first_run_completed": False
+            "first_run_completed": False,
+            "window_width": 980,
+            "window_height": 680
         }
         if os.path.exists(CONFIG_FILE):
             try:
@@ -124,14 +138,32 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         # 1. Left Navigation Sidebar
         self._build_sidebar(root_box)
 
-        # 2. Main Content Stack
+        # 2. Main Content Overlay (contains stack + floating HUD banner)
+        self.content_overlay = Gtk.Overlay()
+        self.content_overlay.set_hexpand(True)
+        self.content_overlay.set_vexpand(True)
+        root_box.append(self.content_overlay)
+
         self.content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.content_box.add_css_class("content-area")
         self.content_box.set_hexpand(True)
         self.content_box.set_vexpand(True)
-        root_box.append(self.content_box)
+        self.content_overlay.set_child(self.content_box)
 
-        # Refresh Notification Banner with Spinner
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_duration(180)
+        self.stack.set_vexpand(True)
+        self.content_box.append(self.stack)
+
+        # Floating HUD Notification Banner with Spinner (smooth revealer)
+        self.refresh_revealer = Gtk.Revealer()
+        self.refresh_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.refresh_revealer.set_transition_duration(280)
+        self.refresh_revealer.set_valign(Gtk.Align.START)
+        self.refresh_revealer.set_halign(Gtk.Align.CENTER)
+        self.refresh_revealer.set_margin_top(14)
+
         self.refresh_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.refresh_banner.add_css_class("refresh-banner")
         self.refresh_spinner = Gtk.Spinner()
@@ -139,14 +171,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.refresh_lbl = Gtk.Label(label=t("refreshing"))
         self.refresh_lbl.add_css_class("refresh-banner-text")
         self.refresh_banner.append(self.refresh_lbl)
-        self.refresh_banner.set_visible(False)
-        self.content_box.append(self.refresh_banner)
 
-        self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.stack.set_transition_duration(180)
-        self.stack.set_vexpand(True)
-        self.content_box.append(self.stack)
+        self.refresh_revealer.set_child(self.refresh_banner)
+        self.refresh_revealer.set_reveal_child(False)
+        self.content_overlay.add_overlay(self.refresh_revealer)
 
         self._build_view_changes()
         self._build_view_history()
@@ -157,6 +185,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         sidebar.add_css_class("sidebar-box")
         sidebar.set_size_request(240, -1)
+        sidebar.set_hexpand(False)
         parent.append(sidebar)
 
         # Brand Header with clean transparent squircle icon
@@ -180,6 +209,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         self.lbl_sub = Gtk.Label(label=t("app_subtitle"))
         self.lbl_sub.add_css_class("brand-subtitle")
+        self.lbl_sub.set_ellipsize(Pango.EllipsizeMode.END)
+        self.lbl_sub.set_max_width_chars(20)
         self.lbl_sub.set_xalign(0)
         title_box.append(self.lbl_sub)
 
@@ -232,6 +263,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             img = Gtk.Image.new_from_icon_name(icon_name)
             lbl = Gtk.Label(label=t(trans_key))
+            lbl.set_ellipsize(Pango.EllipsizeMode.END)
+            lbl.set_max_width_chars(18)
             lbl.set_xalign(0)
             lbl.set_hexpand(True)
             btn_box.append(img)
@@ -318,8 +351,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.lbl_view1_title = Gtk.Label(label=t("tab_changes"), css_classes=["view-title"], xalign=0)
+        self.lbl_view1_title.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_view1_title)
         self.lbl_changes_sub = Gtk.Label(label=t("sub_changes"), css_classes=["view-subtitle"], xalign=0)
+        self.lbl_changes_sub.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_changes_sub)
         top_row.append(title_box)
 
@@ -441,8 +476,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.lbl_view2_title = Gtk.Label(label=t("tab_history"), css_classes=["view-title"], xalign=0)
+        self.lbl_view2_title.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_view2_title)
         self.lbl_hist_sub = Gtk.Label(label=t("sub_history"), css_classes=["view-subtitle"], xalign=0)
+        self.lbl_hist_sub.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_hist_sub)
         top_row.append(title_box)
         page.append(top_row)
@@ -526,8 +563,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.lbl_view3_title = Gtk.Label(label=t("tab_pulse"), css_classes=["view-title"], xalign=0)
+        self.lbl_view3_title.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_view3_title)
         self.lbl_pulse_sub = Gtk.Label(label=t("sub_pulse"), css_classes=["view-subtitle"], xalign=0)
+        self.lbl_pulse_sub.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_pulse_sub)
         top_row.append(title_box)
         page.append(top_row)
@@ -554,6 +593,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         vel_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         vel_card.add_css_class("hud-card")
         self.lbl_vel_hdr = Gtk.Label(label=t("velocity_title"), css_classes=["hud-card-header"], xalign=0)
+        self.lbl_vel_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         vel_card.append(self.lbl_vel_hdr)
         self.vel_chart = CommitVelocityWidget()
         vel_card.append(self.vel_chart)
@@ -562,6 +602,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         punch_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         punch_card.add_css_class("hud-card")
         self.lbl_punch_hdr = Gtk.Label(label=t("punchcard_title"), css_classes=["hud-card-header"], xalign=0)
+        self.lbl_punch_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         punch_card.append(self.lbl_punch_hdr)
         self.punchcard = PunchcardWidget()
         punch_card.append(self.punchcard)
@@ -577,6 +618,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         card.append(lbl_v)
 
         lbl_l = Gtk.Label(label=label_text, css_classes=["metric-label"], xalign=0)
+        lbl_l.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl_l.set_max_width_chars(15)
         card.append(lbl_l)
         
         card.val_widget = lbl_v
@@ -625,8 +668,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.lbl_view4_title = Gtk.Label(label=t("tab_telemetry"), css_classes=["view-title"], xalign=0)
+        self.lbl_view4_title.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_view4_title)
         self.lbl_telem_sub = Gtk.Label(label=t("sub_telemetry"), css_classes=["view-subtitle"], xalign=0)
+        self.lbl_telem_sub.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_telem_sub)
         top_row.append(title_box)
 
@@ -673,6 +718,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         t_textbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         t_textbox.set_hexpand(True)
         self.lbl_token_banner_title = Gtk.Label(label=t("token_banner_title"), css_classes=["token-banner-title"], xalign=0)
+        self.lbl_token_banner_title.set_ellipsize(Pango.EllipsizeMode.END)
         self.lbl_token_banner_desc = Gtk.Label(label=t("token_banner_desc"), css_classes=["token-banner-desc"], xalign=0, wrap=True)
         t_textbox.append(self.lbl_token_banner_title)
         t_textbox.append(self.lbl_token_banner_desc)
@@ -690,6 +736,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         chart_card.add_css_class("hud-card")
         chart_card.set_hexpand(True)
         self.lbl_traffic_hdr = Gtk.Label(label="14-Day Traffic & Unique Visitors", css_classes=["hud-card-header"], xalign=0)
+        self.lbl_traffic_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         chart_card.append(self.lbl_traffic_hdr)
         self.views_chart = TrafficViewsChart()
         chart_card.append(self.views_chart)
@@ -699,6 +746,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         rx_card.add_css_class("hud-card")
         rx_card.set_size_request(240, -1)
         self.lbl_rx_hdr = Gtk.Label(label=t("reactions"), css_classes=["hud-card-header"], xalign=0)
+        self.lbl_rx_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         rx_card.append(self.lbl_rx_hdr)
 
         rx_grid = Gtk.Grid()
@@ -725,6 +773,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         ref_card.add_css_class("hud-card")
         ref_card.set_hexpand(True)
         self.lbl_ref_hdr = Gtk.Label(label=t("top_referrers"), css_classes=["hud-card-header"], xalign=0)
+        self.lbl_ref_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         ref_card.append(self.lbl_ref_hdr)
         self.referrers_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         ref_card.append(self.referrers_container)
@@ -734,6 +783,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         rel_card.add_css_class("hud-card")
         rel_card.set_hexpand(True)
         self.lbl_rel_hdr = Gtk.Label(label=t("release_downloads"), css_classes=["hud-card-header"], xalign=0)
+        self.lbl_rel_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         rel_card.append(self.lbl_rel_hdr)
         self.releases_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         rel_card.append(self.releases_container)
@@ -874,13 +924,22 @@ class GitPulseWindow(Gtk.ApplicationWindow):
     # --- DATA REFRESH ---
 
     def _on_refresh_clicked(self):
+        # Cancel any pending dismissal timers
+        if getattr(self, "_refresh_timer_id", None):
+            GLib.source_remove(self._refresh_timer_id)
+            self._refresh_timer_id = None
+        if getattr(self, "_refresh_finish_timer_id", None):
+            GLib.source_remove(self._refresh_finish_timer_id)
+            self._refresh_finish_timer_id = None
+
         self.sound.play("click")
         self.btn_refresh_stack.set_visible_child_name("spinner")
         self.btn_refresh_spinner.start()
         self.btn_refresh_ui.set_sensitive(False)
+
         self.refresh_lbl.set_text(t("refreshing"))
-        self.refresh_banner.set_visible(True)
         self.refresh_spinner.start()
+        self.refresh_revealer.set_reveal_child(True)
 
         def _worker():
             telem_data = None
@@ -904,20 +963,27 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             else:
                 self._refresh_telemetry_view()
 
-        self.btn_refresh_spinner.stop()
-        self.btn_refresh_stack.set_visible_child_name("icon")
-        self.btn_refresh_ui.set_sensitive(True)
-
-        self.refresh_spinner.stop()
+        # Update text to indicate completion
         self.refresh_lbl.set_text(f"✓ {t('refresh_done')}")
         self.sound.play("commit")
 
-        def _hide():
-            self.refresh_banner.set_visible(False)
-            self.refresh_lbl.set_text(t("refreshing"))
+        # Keep spinner continuously spinning and notification visible for 3.5 - 4 seconds!
+        def _start_hide():
+            self.refresh_revealer.set_reveal_child(False)
+            self._refresh_timer_id = None
             return False
 
-        GLib.timeout_add(1000, _hide)
+        def _complete_hide():
+            self.refresh_spinner.stop()
+            self.btn_refresh_spinner.stop()
+            self.btn_refresh_stack.set_visible_child_name("icon")
+            self.btn_refresh_ui.set_sensitive(True)
+            self.refresh_lbl.set_text(t("refreshing"))
+            self._refresh_finish_timer_id = None
+            return False
+
+        self._refresh_timer_id = GLib.timeout_add(3500, _start_hide)
+        self._refresh_finish_timer_id = GLib.timeout_add(3850, _complete_hide)
 
     def _load_repo_data(self):
         if not self.git.is_valid():
@@ -1206,17 +1272,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.config["language"] = new_lang
         self._save_config()
         self.btn_lang.set_label("EN" if new_lang == "en" else "RU")
-        self.sound.play("click")
 
         # Synchronously re-localize ALL text widgets across every screen
         self._update_all_strings()
-        self._load_repo_data()
-        if self.active_view == "pulse":
-            self._refresh_pulse_view()
-        elif self.active_view == "history":
-            self._refresh_history_view()
-        elif self.active_view == "telemetry":
-            self._refresh_telemetry_view()
+
+        # Trigger smooth refresh animation with spinner on language switch
+        self._on_refresh_clicked()
 
     def _on_token_dialog(self, btn):
         self.sound.play("click")
