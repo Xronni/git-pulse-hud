@@ -1,41 +1,52 @@
-/* GitPulse HUD — Professional Libadwaita Dark Theme */
+/* GitPulse HUD — AAA Grade Libadwaita Dark Theme */
 
 window.git-pulse-window {
-    background-color: #0f1015;
+    background-color: #0d0e12;
     color: #e2e8f0;
 }
 
 /* Sidebar Styling */
 .sidebar-box {
-    background-color: #14151c;
-    border-right: 1px solid rgba(255, 255, 255, 0.07);
-    padding: 18px 14px;
+    background-color: #121319;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 20px 14px 16px 14px;
+}
+
+.brand-icon {
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(56, 189, 248, 0.30);
 }
 
 .brand-title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 800;
-    letter-spacing: 0.5px;
+    letter-spacing: -0.3px;
     color: #f8fafc;
 }
 
 .brand-badge {
-    background: rgba(56, 189, 248, 0.15);
+    background: rgba(56, 189, 248, 0.16);
     color: #38bdf8;
-    border: 1px solid rgba(56, 189, 248, 0.25);
-    border-radius: 6px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-weight: 700;
+    border: 1px solid rgba(56, 189, 248, 0.30);
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}
+
+.brand-subtitle {
+    font-size: 11px;
+    color: #64748b;
 }
 
 /* Repo Card in Sidebar */
 .sidebar-repo-card {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.07);
     border-radius: 12px;
     padding: 10px 12px;
-    margin-top: 14px;
+    margin-top: 16px;
     margin-bottom: 16px;
 }
 
@@ -48,7 +59,7 @@ window.git-pulse-window {
 .branch-badge {
     background: rgba(34, 197, 94, 0.12);
     color: #4ade80;
-    border: 1px solid rgba(34, 197, 94, 0.20);
+    border: 1px solid rgba(34, 197, 94, 0.22);
     border-radius: 6px;
     padding: 2px 7px;
     font-size: 11px;
@@ -56,7 +67,7 @@ window.git-pulse-window {
 }
 
 .ahead-badge {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
     color: #94a3b8;
     border-radius: 6px;
     padding: 2px 6px;
@@ -66,39 +77,64 @@ window.git-pulse-window {
 
 /* Sidebar Navigation Items */
 .nav-btn {
-    border-radius: 10px;
-    padding: 9px 12px;
+    border-radius: 9px;
+    padding: 8px 12px;
     font-size: 13px;
     font-weight: 600;
     color: #94a3b8;
     background: transparent;
     border: none;
-    transition: all 150ms ease;
+    transition: all 140ms ease;
     margin-bottom: 3px;
 }
 
 .nav-btn:hover {
     color: #ffffff;
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .nav-btn.active {
-    background: rgba(99, 102, 241, 0.20);
+    background: rgba(99, 102, 241, 0.18);
     color: #818cf8;
-    border: 1px solid rgba(99, 102, 241, 0.35);
+    border: 1px solid rgba(99, 102, 241, 0.32);
+}
+
+/* Sidebar Bottom Segmented Controls */
+.sidebar-footer {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 3px;
+}
+
+.footer-btn {
+    border-radius: 7px;
+    padding: 5px;
+    background: transparent;
+    color: #94a3b8;
+    border: none;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 32px;
+    transition: all 120ms ease;
+}
+
+.footer-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
 }
 
 /* Main Content Area */
 .content-area {
-    background-color: #0f1015;
-    padding: 22px 24px;
+    background-color: #0d0e12;
+    padding: 24px 28px;
 }
 
 .view-title {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 800;
     color: #f8fafc;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.4px;
 }
 
 .view-subtitle {
@@ -107,37 +143,37 @@ window.git-pulse-window {
     margin-top: 2px;
 }
 
-/* Cards & Groups */
+/* Cards & Container Modules */
 .hud-card {
-    background-color: #171821;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background-color: #14161f;
+    border: 1px solid rgba(255, 255, 255, 0.065);
     border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 14px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
 }
 
 .hud-card-header {
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.9px;
     color: #64748b;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 /* File Row */
 .file-item-row {
     background: rgba(255, 255, 255, 0.025);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.045);
     border-radius: 10px;
     padding: 8px 12px;
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     transition: all 120ms ease;
 }
 
 .file-item-row:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.055);
+    border-color: rgba(255, 255, 255, 0.09);
 }
 
 .status-tag {
@@ -178,29 +214,29 @@ window.git-pulse-window {
 
 /* Conventional Commit Type Chips */
 .chip-btn {
-    border-radius: 8px;
+    border-radius: 7px;
     padding: 4px 10px;
     font-size: 11px;
-    font-weight: 600;
-    background: rgba(255, 255, 255, 0.04);
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.035);
     color: #94a3b8;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     transition: all 120ms ease;
 }
 
 .chip-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.07);
     color: #f1f5f9;
 }
 
 .chip-btn.active {
-    background: rgba(56, 189, 248, 0.20);
+    background: rgba(56, 189, 248, 0.18);
     color: #38bdf8;
-    border-color: rgba(56, 189, 248, 0.40);
+    border-color: rgba(56, 189, 248, 0.38);
 }
 
 .commit-preview-box {
-    background: #090a0d;
+    background: #08090c;
     border: 1px solid rgba(99, 102, 241, 0.25);
     border-radius: 8px;
     padding: 9px 12px;
@@ -209,44 +245,57 @@ window.git-pulse-window {
     color: #38bdf8;
 }
 
-/* Stat Metric Cards */
+/* Metric Hero Cards */
 .metric-card {
-    background: #171821;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: #14161f;
+    border: 1px solid rgba(255, 255, 255, 0.065);
     border-radius: 12px;
     padding: 14px 16px;
-    min-width: 120px;
+    min-width: 110px;
 }
 
 .metric-number {
-    font-size: 24px;
+    font-size: 26px;
     font-weight: 800;
     color: #f8fafc;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.6px;
 }
 
 .metric-label {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
     color: #64748b;
-    margin-top: 3px;
+    margin-top: 2px;
 }
 
-/* Subtle Action Buttons */
+/* Action Buttons */
 .subtle-btn {
     border-radius: 8px;
     padding: 6px 12px;
     font-size: 12px;
     font-weight: 600;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.045);
     color: #cbd5e1;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.075);
 }
 
 .subtle-btn:hover {
-    background: rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.09);
+    color: #ffffff;
+}
+
+.subtle-icon-btn {
+    border-radius: 7px;
+    padding: 3px 6px;
+    background: transparent;
+    color: #94a3b8;
+    border: none;
+}
+
+.subtle-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
     color: #ffffff;
 }
 
@@ -264,10 +313,27 @@ window.git-pulse-window {
     background: #4338ca;
 }
 
-/* Gutter & Diff Window */
-.diff-window-view {
-    background-color: #0d1117;
-    color: #c9d1d9;
-    font-family: monospace;
-    font-size: 12px;
+/* Token Modal Window */
+.token-modal-window {
+    background-color: #12131a;
+    color: #e2e8f0;
+}
+
+.token-hint-label {
+    font-size: 13px;
+    color: #94a3b8;
+    line-height: 1.4;
+}
+
+.token-entry {
+    background-color: #090a0e;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #f1f5f9;
+}
+
+.token-entry:focus-within {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
 }

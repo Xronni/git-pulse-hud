@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-GitPulse HUD — Clean Vector Cairo Charts
-Minimalist, high-contrast DrawingArea components for Git activity and GitHub traffic.
+GitPulse HUD — AAA Grade Vector Cairo Charts
+Minimalist, high-contrast, polished DrawingArea components with value tags and gradients.
 """
 
 import math
@@ -28,7 +28,7 @@ class CommitVelocityWidget(Gtk.DrawingArea):
     def __init__(self):
         super().__init__()
         self.set_content_width(500)
-        self.set_content_height(160)
+        self.set_content_height(170)
         self.data = []
         self.set_draw_func(self._on_draw)
 
@@ -37,16 +37,16 @@ class CommitVelocityWidget(Gtk.DrawingArea):
         self.queue_draw()
 
     def _on_draw(self, area, cr, width, height):
-        # Card Background
-        rounded_rectangle(cr, 0, 0, width, height, 12)
-        cr.set_source_rgb(0.09, 0.10, 0.13)
+        # Subtle inset backdrop
+        rounded_rectangle(cr, 0, 0, width, height, 10)
+        cr.set_source_rgb(0.07, 0.08, 0.11)
         cr.fill_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.06)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
         cr.set_line_width(1.0)
         cr.stroke()
 
         if not self.data:
-            cr.set_source_rgba(0.5, 0.55, 0.65, 0.8)
+            cr.set_source_rgba(0.45, 0.50, 0.60, 0.8)
             cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(12)
             msg = "No commit activity recorded in this period"
@@ -56,8 +56,8 @@ class CommitVelocityWidget(Gtk.DrawingArea):
             return
 
         pad_x = 24
-        pad_top = 26
-        pad_bottom = 28
+        pad_top = 32
+        pad_bottom = 26
         chart_w = width - 2 * pad_x
         chart_h = height - pad_top - pad_bottom
 
@@ -66,24 +66,24 @@ class CommitVelocityWidget(Gtk.DrawingArea):
         if max_count == 0:
             max_count = 1
 
-        # Subtle Horizontal Grid lines
-        cr.set_line_width(0.7)
-        for g in [0.25, 0.5, 0.75, 1.0]:
+        # Horizontal subtle grid lines
+        cr.set_line_width(0.8)
+        for g in [0.33, 0.66, 1.0]:
             gy = pad_top + chart_h - g * chart_h
             cr.move_to(pad_x, gy)
             cr.line_to(pad_x + chart_w, gy)
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.03)
             cr.stroke()
 
         # Baseline
         cr.move_to(pad_x, pad_top + chart_h)
         cr.line_to(pad_x + chart_w, pad_top + chart_h)
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.10)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.08)
         cr.stroke()
 
         n_bars = len(self.data)
         bar_step = chart_w / n_bars
-        bar_w = max(6, bar_step * 0.55)
+        bar_w = max(8, bar_step * 0.55)
 
         for i, item in enumerate(self.data):
             count = item.get("count", 0)
@@ -91,26 +91,36 @@ class CommitVelocityWidget(Gtk.DrawingArea):
             bh = (count / max_count) * chart_h if count > 0 else 3
             by = pad_top + chart_h - bh
 
-            rounded_rectangle(cr, bx, by, bar_w, bh, min(3, bar_w / 2))
+            rounded_rectangle(cr, bx, by, bar_w, bh, min(4, bar_w / 2))
 
             if count > 0:
                 pat = cairo.LinearGradient(bx, by, bx, by + bh)
-                pat.add_color_stop_rgb(0, 0.22, 0.74, 0.97)  # Sky blue
-                pat.add_color_stop_rgb(1, 0.39, 0.40, 0.95)  # Indigo
+                pat.add_color_stop_rgb(0, 0.22, 0.74, 0.97)  # Electric cyan
+                pat.add_color_stop_rgb(1, 0.39, 0.40, 0.95)  # Purple
                 cr.set_source(pat)
             else:
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.05)
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.06)
 
             cr.fill()
 
-            # Date Label
+            # Number badge above active bars
+            if count > 0:
+                cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+                cr.set_font_size(10)
+                cr.set_source_rgb(0.38, 0.85, 0.98)
+                val_str = str(count)
+                val_ext = cr.text_extents(val_str)
+                cr.move_to(bx + bar_w / 2 - val_ext.width / 2, by - 6)
+                cr.show_text(val_str)
+
+            # Date Label below baseline
             if i % max(1, n_bars // 6) == 0 or i == n_bars - 1:
                 cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
                 cr.set_font_size(9)
-                cr.set_source_rgba(0.55, 0.60, 0.70, 0.9)
+                cr.set_source_rgba(0.50, 0.55, 0.65, 0.9)
                 lbl = item.get("label", "")
                 ext = cr.text_extents(lbl)
-                cr.move_to(bx + bar_w / 2 - ext.width / 2, height - 10)
+                cr.move_to(bx + bar_w / 2 - ext.width / 2, height - 8)
                 cr.show_text(lbl)
 
 
@@ -127,14 +137,14 @@ class PunchcardWidget(Gtk.DrawingArea):
         self.queue_draw()
 
     def _on_draw(self, area, cr, width, height):
-        rounded_rectangle(cr, 0, 0, width, height, 12)
-        cr.set_source_rgb(0.09, 0.10, 0.13)
+        rounded_rectangle(cr, 0, 0, width, height, 10)
+        cr.set_source_rgb(0.07, 0.08, 0.11)
         cr.fill_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.06)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
         cr.set_line_width(1.0)
         cr.stroke()
 
-        pad_x = 18
+        pad_x = 20
         pad_y = 10
         total_w = width - 2 * pad_x
         cell_h = height - 2 * pad_y - 14
@@ -148,12 +158,12 @@ class PunchcardWidget(Gtk.DrawingArea):
             val = self.hours[h] if h < len(self.hours) else 0
             ratio = val / max_val
             x = pad_x + h * cell_w + 1.5
-            w = max(2, cell_w - 3)
+            w = max(3, cell_w - 3)
             y = pad_y
             rounded_rectangle(cr, x, y, w, cell_h, 2)
 
             if val > 0:
-                alpha = 0.20 + 0.80 * ratio
+                alpha = 0.25 + 0.75 * ratio
                 cr.set_source_rgba(0.13, 0.85, 0.55, alpha)
             else:
                 cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
@@ -162,7 +172,7 @@ class PunchcardWidget(Gtk.DrawingArea):
         # Hour Markers
         cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(9)
-        cr.set_source_rgba(0.55, 0.60, 0.70, 0.85)
+        cr.set_source_rgba(0.50, 0.55, 0.65, 0.85)
         for h in [0, 4, 8, 12, 16, 20, 23]:
             lbl = f"{h:02d}:00"
             ext = cr.text_extents(lbl)
@@ -184,15 +194,15 @@ class TrafficViewsChart(Gtk.DrawingArea):
         self.queue_draw()
 
     def _on_draw(self, area, cr, width, height):
-        rounded_rectangle(cr, 0, 0, width, height, 12)
-        cr.set_source_rgb(0.09, 0.10, 0.13)
+        rounded_rectangle(cr, 0, 0, width, height, 10)
+        cr.set_source_rgb(0.07, 0.08, 0.11)
         cr.fill_preserve()
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.06)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.04)
         cr.set_line_width(1.0)
         cr.stroke()
 
         if not self.history:
-            cr.set_source_rgba(0.5, 0.55, 0.65, 0.8)
+            cr.set_source_rgba(0.45, 0.50, 0.60, 0.8)
             cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(12)
             msg = "Configure GitHub Token to display 14-day traffic trend"
@@ -202,7 +212,7 @@ class TrafficViewsChart(Gtk.DrawingArea):
             return
 
         pad_x = 24
-        pad_top = 28
+        pad_top = 32
         pad_bottom = 24
         chart_w = width - 2 * pad_x
         chart_h = height - pad_top - pad_bottom
@@ -217,10 +227,10 @@ class TrafficViewsChart(Gtk.DrawingArea):
         # Baseline
         cr.move_to(pad_x, pad_top + chart_h)
         cr.line_to(pad_x + chart_w, pad_top + chart_h)
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.10)
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.08)
         cr.stroke()
 
-        # 1. Page views area
+        # Page views filled area
         cr.new_path()
         cr.move_to(pad_x, pad_top + chart_h)
         for i, pt in enumerate(self.history):
@@ -231,7 +241,7 @@ class TrafficViewsChart(Gtk.DrawingArea):
         cr.close_path()
 
         pat = cairo.LinearGradient(0, pad_top, 0, pad_top + chart_h)
-        pat.add_color_stop_rgba(0, 0.13, 0.85, 0.55, 0.30)
+        pat.add_color_stop_rgba(0, 0.13, 0.85, 0.55, 0.35)
         pat.add_color_stop_rgba(1, 0.13, 0.85, 0.55, 0.02)
         cr.set_source(pat)
         cr.fill_preserve()
@@ -240,7 +250,7 @@ class TrafficViewsChart(Gtk.DrawingArea):
         cr.set_line_width(2.0)
         cr.stroke()
 
-        # 2. Unique visitors line
+        # Unique visitors line
         cr.new_path()
         for i, pt in enumerate(self.history):
             ux = pad_x + i * step
@@ -257,13 +267,13 @@ class TrafficViewsChart(Gtk.DrawingArea):
         cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(10)
         cr.set_source_rgba(0.13, 0.85, 0.55, 0.95)
-        cr.arc(pad_x + 6, 14, 3, 0, 2 * math.pi)
+        cr.arc(pad_x + 6, 16, 3, 0, 2 * math.pi)
         cr.fill()
-        cr.move_to(pad_x + 14, 17)
+        cr.move_to(pad_x + 14, 19)
         cr.show_text("Page Views")
 
         cr.set_source_rgba(0.22, 0.74, 0.97, 0.95)
-        cr.arc(pad_x + 100, 14, 3, 0, 2 * math.pi)
+        cr.arc(pad_x + 100, 16, 3, 0, 2 * math.pi)
         cr.fill()
-        cr.move_to(pad_x + 108, 17)
+        cr.move_to(pad_x + 108, 19)
         cr.show_text("Unique Visitors")
