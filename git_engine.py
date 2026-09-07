@@ -234,13 +234,188 @@ class GitEngine:
         res = subprocess.run(["git", "stash", "push", "-m", message], cwd=self.root_path, capture_output=True, text=True, check=False)
         return res.returncode == 0, res.stdout or res.stderr
 
-    def stash_pop(self):
-        res = subprocess.run(["git", "stash", "pop"], cwd=self.root_path, capture_output=True, text=True, check=False)
+    def stash_pop(self, index=None):
+        cmd = ["git", "stash", "pop"]
+        if index is not None:
+            cmd.append(f"stash@{{{index}}}")
+        res = subprocess.run(cmd, cwd=self.root_path, capture_output=True, text=True, check=False)
         return res.returncode == 0, res.stdout or res.stderr
+
+    def stash_apply(self, index=0):
+        res = subprocess.run(["git", "stash", "apply", f"stash@{{{index}}}"], cwd=self.root_path, capture_output=True, text=True, check=False)
+        return res.returncode == 0, res.stdout or res.stderr
+
+    def stash_drop(self, index=0):
+        res = subprocess.run(["git", "stash", "drop", f"stash@{{{index}}}"], cwd=self.root_path, capture_output=True, text=True, check=False)
+        return res.returncode == 0, res.stdout or res.stderr
+
+    def stash_diff(self, index=0):
+        out = self._run(["stash", "show", "-p", f"stash@{{{index}}}"])
+        return out or "(Empty stash or no changes)"
+
+    def stash_list(self):
+        """Returns list of stashes: [{'index': int, 'id': 'stash@{0}', 'date': '2 hours ago', 'message': str}]."""
+        out = self._run(["stash", "list", "--pretty=format:%gd%x09%cr%x09%gs"])
+        stashes = []
+        if out:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 3:
+                    s_id = parts[0].strip()
+                    idx = 0
+                    if "{" in s_id and "}" in s_id:
+                        try:
+                            idx = int(s_id.split("{")[1].split("}")[0])
+                        except Exception:
+                            idx = len(stashes)
+                    stashes.append({
+                        "index": idx,
+                        "id": s_id,
+                        "date": parts[1].strip(),
+                        "message": parts[2].strip()
+                    })
+        return stashes
 
     def stash_count(self):
         out = self._run(["stash", "list"])
         return len(out.splitlines()) if out else 0
+
+    def list_branches_detailed(self):
+        """Returns list of branches with current flag."""
+        current = self.get_current_branch()
+        branches = self.list_branches()
+        result = []
+        for b in branches:
+            result.append({
+                "name": b,
+                "current": (b == current)
+            })
+        return result
+
+    def merge_branch(self, branch_name):
+        res = subprocess.run(["git", "merge", branch_name], cwd=self.root_path, capture_output=True, text=True, check=False)
+        return res.returncode == 0, res.stdout or res.stderr
+
+    def get_latest_tag(self):
+        out = self._run(["describe", "--tags", "--abbrev=0"])
+        if out:
+            return out.strip()
+        tags = self._run(["tag", "-l", "--sort=-creatordate"])
+        if tags:
+            return tags.splitlines()[0].strip()
+        return None
+
+    def get_changelog_data(self):
+        latest_tag = self.get_latest_tag()
+        if latest_tag:
+            out = self._run(["log", f"{latest_tag}..HEAD", "--pretty=format:%h%x09%s%x09%an"])
+        else:
+            out = self._run(["log", "-n", "50", "--pretty=format:%h%x09%s%x09%an"])
+        
+        categories = {
+            "feat": [],
+            "fix": [],
+            "docs": [],
+            "perf": [],
+            "refactor": [],
+            "chore": [],
+            "other": []
+        }
+        
+        if out:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    h, msg = parts[0], parts[1]
+                    matched = False
+                    for cat in ["feat", "fix", "docs", "perf", "refactor", "chore"]:
+                        if msg.startswith(f"{cat}:") or msg.startswith(f"{cat}(") or msg.startswith(f"{cat}!:"):
+                            categories[cat].append({"hash": h, "message": msg})
+                            matched = True
+                            break
+                    if not matched:
+                        categories["other"].append({"hash": h, "message": msg})
+                        
+        return {
+            "latest_tag": latest_tag,
+            "categories": categories
+        }
+
+    def create_tag(self, tag_name, message=""):
+        msg = message.strip() or f"Release {tag_name}"
+        res = subprocess.run(["git", "tag", "-a", tag_name, "-m", msg], cwd=self.root_path, capture_output=True, text=True, check=False)
+        return res.returncode == 0, res.stdout or res.stderr
+
+    def get_commit_graph(self, limit=40):
+        """Returns commits with track column and branch metadata."""
+        format_str = "%h%x09%p%x09%an%x09%ar%x09%s%x09%d"
+        out = self._run(["log", f"-n", str(limit), f"--pretty=format:{format_str}"])
+        commits = []
+        if not out:
+            return commits
+        
+        lines = out.splitlines()
+        active_tracks = []
+        
+        for line in lines:
+            parts = line.split("\t")
+            if len(parts) < 5:
+                continue
+            h = parts[0].strip()
+            parents = parts[1].strip().split() if parts[1].strip() else []
+            author = parts[2].strip()
+            rel_date = parts[3].strip()
+            subject = parts[4].strip()
+            decorations = parts[5].strip() if len(parts) > 5 else ""
+            
+            col = 0
+            if h in active_tracks:
+                col = active_tracks.index(h)
+            else:
+                if None in active_tracks:
+                    col = active_tracks.index(None)
+                    active_tracks[col] = h
+                else:
+                    col = len(active_tracks)
+                    active_tracks.append(h)
+            
+            is_merge = len(parents) > 1
+            if parents:
+                active_tracks[col] = parents[0]
+                for p in parents[1:]:
+                    if p not in active_tracks:
+                        active_tracks.append(p)
+            else:
+                active_tracks[col] = None
+            
+            while active_tracks and active_tracks[-1] is None:
+                active_tracks.pop()
+                
+            branch_label = ""
+            if decorations:
+                clean_dec = decorations.strip("()")
+                for item in clean_dec.split(","):
+                    item = item.strip()
+                    if "->" in item:
+                        branch_label = item.split("->")[-1].strip()
+                        break
+                    elif item and not item.startswith("tag:"):
+                        branch_label = item
+                        break
+            
+            commits.append({
+                "hash": h,
+                "parents": parents,
+                "is_merge": is_merge,
+                "col": col,
+                "max_cols": max(len(active_tracks), col + 1),
+                "author": author,
+                "relative_date": rel_date,
+                "message": subject,
+                "branch": branch_label
+            })
+            
+        return commits
 
     def get_file_diff(self, filepath, staged=False):
         args = ["diff"]

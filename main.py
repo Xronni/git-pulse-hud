@@ -21,8 +21,12 @@ from gi.repository import Gtk, Adw, Gdk, GdkPixbuf, GLib, Pango
 from git_engine import GitEngine
 from sound_engine import SoundEngine
 from github_telemetry import GitHubTelemetry
-from pulse_widget import CommitVelocityWidget, PunchcardWidget, TrafficViewsChart
+from pulse_widget import CommitVelocityWidget, PunchcardWidget, TrafficViewsChart, BranchGraphNodeWidget
 from diff_viewer import DiffViewerDialog
+from secret_scanner import scan_staged_files
+from stash_dialog import StashInspectorDialog
+from release_dialog import ReleaseDrafterDialog
+from quick_switcher import QuickSwitcherDialog
 import i18n
 from i18n import t
 
@@ -71,6 +75,17 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.telemetry = GitHubTelemetry(token=self.config.get("github_token", ""))
         self.active_view = "changes"
         self.selected_type = "feat"
+        self.last_scan_findings = []
+
+        self.config.setdefault("recent_repos", [])
+        if initial_repo and os.path.exists(initial_repo):
+            if initial_repo not in self.config["recent_repos"]:
+                self.config["recent_repos"].insert(0, initial_repo)
+
+        # Global key controller (Ctrl+K for Quick Switcher)
+        key_ctl = Gtk.EventControllerKey()
+        key_ctl.connect("key-pressed", self._on_global_key_pressed)
+        self.add_controller(key_ctl)
 
         self._refresh_timer_id = None
         self._refresh_finish_timer_id = None
@@ -228,6 +243,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         # Active Repository Card
         repo_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         repo_card.add_css_class("sidebar-repo-card")
+        repo_card.set_tooltip_text(t("quick_switcher_placeholder"))
+        repo_click = Gtk.GestureClick()
+        repo_click.connect("pressed", lambda g, n, x, y: self._on_open_quick_switcher())
+        repo_card.add_controller(repo_click)
 
         top_r = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.sidebar_repo_name = Gtk.Label(label=self.git.get_repo_name())
@@ -380,6 +399,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_pop.connect("clicked", self._on_pop_stash)
         top_row.append(self.btn_pop)
 
+        self.btn_stash_shelf = Gtk.Button(label=t("stashes"))
+        self.btn_stash_shelf.add_css_class("subtle-btn")
+        self.btn_stash_shelf.connect("clicked", lambda b: self._on_open_stashes())
+        top_row.append(self.btn_stash_shelf)
+
         page.append(top_row)
 
         scrolled = Gtk.ScrolledWindow()
@@ -441,6 +465,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.preview_lbl.set_hexpand(True)
         bottom_row.append(self.preview_lbl)
 
+        # Pre-Commit Security Scanner Pill
+        self.scanner_status_pill = Gtk.Button(label=f"🛡️ {t('scanner_clean')}")
+        self.scanner_status_pill.add_css_class("scanner-pill-clean")
+        self.scanner_status_pill.connect("clicked", self._on_scanner_pill_clicked)
+        bottom_row.append(self.scanner_status_pill)
+
         self.btn_commit = Gtk.Button(label=t("btn_commit"))
         self.btn_commit.add_css_class("subtle-btn")
         self.btn_commit.connect("clicked", lambda b: self._on_commit(push=False))
@@ -490,6 +520,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_hist_sub.set_ellipsize(Pango.EllipsizeMode.END)
         title_box.append(self.lbl_hist_sub)
         top_row.append(title_box)
+        top_row.append(Gtk.Box(hexpand=True))
+
+        self.btn_branch_switch = Gtk.Button(label="🌿 main ▾", css_classes=["branch-switch-btn"])
+        self.btn_branch_switch.connect("clicked", self._on_branch_switcher_clicked)
+        top_row.append(self.btn_branch_switch)
+
         page.append(top_row)
 
         scrolled = Gtk.ScrolledWindow()
@@ -507,6 +543,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.history_container.remove(child)
 
         if not self.git.is_valid():
+            self.btn_branch_switch.set_label("🌿 — ▾")
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             box.set_margin_top(60)
             box.set_margin_bottom(60)
@@ -521,7 +558,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.history_container.append(box)
             return
 
-        commits = self.git.get_recent_commits(25)
+        cur_branch = self.git.get_current_branch()
+        self.btn_branch_switch.set_label(f"🌿 {cur_branch} ▾")
+
+        commits = self.git.get_commit_graph(45)
         if not commits:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             box.set_margin_top(60)
@@ -538,14 +578,26 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             return
 
         for c in commits:
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.add_css_class("file-item-row")
+
+            # Cairo Branch Graph Node
+            graph_node = BranchGraphNodeWidget(
+                col=c.get("col", 0),
+                max_cols=c.get("max_cols", 1),
+                is_merge=c.get("is_merge", False)
+            )
+            row.append(graph_node)
 
             btn_hash = Gtk.Button(label=c["hash"])
             btn_hash.add_css_class("subtle-btn")
             btn_hash.set_tooltip_text(t("copy_hash"))
             btn_hash.connect("clicked", lambda b, h=c["hash"]: self._copy_to_clipboard(h))
             row.append(btn_hash)
+
+            if c.get("branch"):
+                b_lbl = Gtk.Label(label=c["branch"], css_classes=["branch-badge"])
+                row.append(b_lbl)
 
             msg_lbl = Gtk.Label(label=c["message"])
             msg_lbl.set_xalign(0)
@@ -592,6 +644,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.card_authors = self._make_metric_card("0", t("stat_contributors"))
         self.card_files = self._make_metric_card("0", t("stat_files"))
         self.card_stashes = self._make_metric_card("0", t("stat_stashes"))
+        self.card_stashes.add_css_class("clickable-card")
+        self.card_stashes.set_tooltip_text(t("stash_shelf"))
+        stash_click = Gtk.GestureClick()
+        stash_click.connect("pressed", lambda g, n, x, y: self._on_open_stashes())
+        self.card_stashes.add_controller(stash_click)
 
         for c in [self.card_commits, self.card_authors, self.card_files, self.card_stashes]:
             c.set_hexpand(True)
@@ -691,6 +748,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_tok.add_css_class("subtle-btn")
         self.btn_tok.connect("clicked", self._on_token_dialog)
         top_row.append(self.btn_tok)
+
+        self.btn_draft_rel = Gtk.Button(label=t("draft_release"))
+        self.btn_draft_rel.add_css_class("primary-btn")
+        self.btn_draft_rel.connect("clicked", lambda b: self._open_release_drafter())
+        top_row.append(self.btn_draft_rel)
 
         page.append(top_row)
 
@@ -899,6 +961,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_changes_sub.set_text(t("sub_changes"))
         self.btn_stash.set_label(t("stash_save"))
         self.btn_pop.set_label(t("stash_pop"))
+        self.btn_stash_shelf.set_label(t("stashes"))
         self.lbl_composer_hdr.set_text(t("commit_builder"))
         self.check_breaking.set_label(t("breaking_change"))
         self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
@@ -909,6 +972,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         # View 2
         self.lbl_view2_title.set_text(t("tab_history"))
         self.lbl_hist_sub.set_text(t("sub_history"))
+        cur_branch = self.git.get_current_branch() if self.git.is_valid() else "—"
+        self.btn_branch_switch.set_label(f"🌿 {cur_branch} ▾")
 
         # View 3
         self.lbl_view3_title.set_text(t("tab_pulse"))
@@ -924,6 +989,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_view4_title.set_text(t("tab_telemetry"))
         self.lbl_telem_sub.set_text(t("sub_telemetry"))
         self.btn_tok.set_label(t("token_settings"))
+        self.btn_draft_rel.set_label(t("draft_release"))
         self.ins_views.lbl_widget.set_text(t("views_14d"))
         self.ins_uniques.lbl_widget.set_text(t("uniques_14d"))
         self.ins_stars.lbl_widget.set_text(t("stars"))
@@ -938,6 +1004,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_token_banner_desc.set_text(t("token_banner_desc"))
         self.btn_token_banner.set_label(t("token_banner_btn"))
         self.refresh_lbl.set_text(t("refreshing"))
+        self._run_secret_scan()
 
     # --- DATA REFRESH ---
 
@@ -982,7 +1049,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 self._refresh_telemetry_view()
 
         # Update text to indicate completion
-        self.refresh_lbl.set_text(f"✓ {t('refresh_done')}")
+        self.refresh_lbl.set_text(t("refresh_done"))
         self.sound.play("commit")
 
         # Keep spinner continuously spinning and notification visible for 2 seconds
@@ -1027,6 +1094,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         staged = status.get("staged", [])
         unstaged = status.get("unstaged", [])
         untracked = status.get("untracked", [])
+
+        self._run_secret_scan()
 
         if not staged and not unstaged and not untracked:
             self._render_empty_changes(t("clean_tree"), t("clean_tree_sub"))
@@ -1197,6 +1266,17 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.sound.play("error")
             return
 
+        if self.last_scan_findings:
+            self._show_secret_warning_dialog(on_confirm=lambda: self._execute_commit(push=push))
+            return
+
+        self._execute_commit(push=push)
+
+    def _execute_commit(self, push=False):
+        desc = self.entry_desc.get_text().strip()
+        if not desc:
+            return
+
         scope = self.entry_scope.get_text().strip()
         breaking = "!" if self.check_breaking.get_active() else ""
         if scope:
@@ -1341,6 +1421,292 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         btn_row.append(btn_save)
 
         box.append(btn_row)
+        dlg.present()
+
+
+
+    # --- GLOBAL ACTIONS & MODALS ---
+
+    def _on_global_key_pressed(self, controller, keyval, keycode, state):
+        is_ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
+        if is_ctrl:
+            if keyval in (
+                Gdk.KEY_k, Gdk.KEY_K,
+                Gdk.KEY_Cyrillic_el, Gdk.KEY_Cyrillic_EL,
+                Gdk.KEY_Cyrillic_ka, Gdk.KEY_Cyrillic_KA
+            ):
+                self._on_open_quick_switcher()
+                return True
+        return False
+
+    def _on_open_quick_switcher(self):
+        self.sound.play("click")
+        dlg = QuickSwitcherDialog(
+            parent=self,
+            recent_repos=self.config.get("recent_repos", []),
+            current_repo=self.git.repo_path if self.git.is_valid() else "",
+            sound_engine=self.sound,
+            on_repo_selected=self._switch_to_repo_path,
+            on_browse_folder=lambda: self._on_choose_repo(None)
+        )
+        dlg.present()
+
+    def _switch_to_repo_path(self, path):
+        if self.git.set_repo(path):
+            self.sound.play("click")
+            self.config["last_repo"] = path
+            self.config["first_run_completed"] = True
+            recent = self.config.get("recent_repos", [])
+            if not isinstance(recent, list):
+                recent = []
+            if path in recent:
+                recent.remove(path)
+            recent.insert(0, path)
+            self.config["recent_repos"] = recent
+            self._save_config()
+            self._load_repo_data()
+            if self.active_view == "pulse":
+                self._refresh_pulse_view()
+            elif self.active_view == "history":
+                self._refresh_history_view()
+            elif self.active_view == "telemetry":
+                self._refresh_telemetry_view()
+        else:
+            self.sound.play("error")
+
+    def _on_branch_switcher_clicked(self, btn):
+        if not self.git.is_valid():
+            return
+        self.sound.play("click")
+        branches = self.git.list_branches_detailed()
+        if not branches:
+            return
+
+        popover = Gtk.Popover()
+        popover.set_parent(btn)
+        popover.set_has_arrow(True)
+        popover.set_autohide(True)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.set_margin_top(8)
+        box.set_margin_bottom(8)
+        box.set_margin_start(8)
+        box.set_margin_end(8)
+        box.set_size_request(220, -1)
+
+        hdr = Gtk.Label(label=t("switch_branch"), css_classes=["stat-label"], xalign=0)
+        hdr.set_margin_bottom(4)
+        box.append(hdr)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_max_content_height(280)
+        scrolled.set_propagate_natural_height(True)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+
+        list_b = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        scrolled.set_child(list_b)
+        box.append(scrolled)
+
+        for b in branches:
+            b_name = b["name"]
+            is_cur = b["current"]
+            b_btn = Gtk.Button()
+            b_btn.add_css_class("flat")
+            b_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            b_icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic" if is_cur else "folder-symbolic")
+            b_icon.set_pixel_size(14)
+            b_icon.set_opacity(1.0 if is_cur else 0.3)
+            b_row.append(b_icon)
+            lbl = Gtk.Label(label=b_name, xalign=0, hexpand=True)
+            if is_cur:
+                lbl.add_css_class("status-tag")
+            b_row.append(lbl)
+            b_btn.set_child(b_row)
+
+            def _checkout(bn=b_name, pop=popover):
+                pop.popdown()
+                if bn != self.git.get_current_branch():
+                    ok, out = self.git.checkout_branch(bn)
+                    if ok:
+                        self.sound.play("click")
+                        self._load_repo_data()
+                        self._refresh_history_view()
+                    else:
+                        self.sound.play("error")
+                        self._show_error_dialog(t("checkout_failed"), out)
+
+            b_btn.connect("clicked", lambda _, bn=b_name, p=popover: _checkout(bn, p))
+            list_b.append(b_btn)
+
+        popover.set_child(box)
+        popover.popup()
+
+    def _on_open_stashes(self):
+        if not self.git.is_valid():
+            return
+        self.sound.play("click")
+        dlg = StashInspectorDialog(
+            parent=self,
+            git_engine=self.git,
+            sound_engine=self.sound,
+            on_changed=self._load_repo_data
+        )
+        dlg.present()
+
+    def _open_release_drafter(self):
+        if not self.git.is_valid():
+            return
+        self.sound.play("click")
+        dlg = ReleaseDrafterDialog(
+            parent=self,
+            git_engine=self.git,
+            sound_engine=self.sound,
+            on_tag_created=self._load_repo_data
+        )
+        dlg.present()
+
+    def _run_secret_scan(self):
+        is_clean, findings = scan_staged_files(self.git)
+        self.last_scan_findings = findings
+        if not is_clean:
+            self.scanner_status_pill.remove_css_class("scanner-pill-clean")
+            self.scanner_status_pill.add_css_class("scanner-pill-warn")
+            count = len(findings)
+            if i18n.get_language() == "ru":
+                warn_text = f"⚠️ {count} {plural_ru(count, 'утечка!', 'утечки!', 'утечек!')}"
+            else:
+                warn_text = f"⚠️ {count} secret{'s' if count > 1 else ''}!"
+            self.scanner_status_pill.set_label(warn_text)
+            self.scanner_status_pill.set_tooltip_text(t("scanner_warning"))
+        else:
+            self.scanner_status_pill.remove_css_class("scanner-pill-warn")
+            self.scanner_status_pill.add_css_class("scanner-pill-clean")
+            self.scanner_status_pill.set_label(f"🛡️ {t('scanner_clean')}")
+            self.scanner_status_pill.set_tooltip_text(t("scanner_clean"))
+
+    def _on_scanner_pill_clicked(self, btn):
+        self.sound.play("click")
+        if self.last_scan_findings:
+            self._show_secret_warning_dialog(on_confirm=None)
+        else:
+            dlg = Gtk.Window(transient_for=self, modal=True)
+            dlg.set_title(t("scanner_clean"))
+            dlg.set_default_size(440, 180)
+            dlg.add_css_class("token-modal-window")
+
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+            box.set_margin_top(20)
+            box.set_margin_bottom(20)
+            box.set_margin_start(20)
+            box.set_margin_end(20)
+            dlg.set_child(box)
+
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            icon = Gtk.Image.new_from_icon_name("security-high-symbolic")
+            icon.set_pixel_size(36)
+            row.append(icon)
+
+            t_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            t_box.set_hexpand(True)
+            lbl_title = Gtk.Label(label=t("scanner_clean"), css_classes=["view-title"], xalign=0)
+            t_box.append(lbl_title)
+            desc_text = "No private keys, tokens, or sensitive credentials detected in staged files." if i18n.get_language() == "en" else "В подготовленных изменениях не обнаружено приватных ключей, токенов или секретов."
+            lbl_desc = Gtk.Label(label=desc_text, css_classes=["view-subtitle"], xalign=0, wrap=True)
+            t_box.append(lbl_desc)
+            row.append(t_box)
+            box.append(row)
+
+            btn_ok = Gtk.Button(label="OK", css_classes=["primary-btn"])
+            btn_ok.set_halign(Gtk.Align.END)
+            btn_ok.connect("clicked", lambda b: dlg.close())
+            box.append(btn_ok)
+            dlg.present()
+
+    def _show_secret_warning_dialog(self, on_confirm=None):
+        self.sound.play("error")
+        dlg = Gtk.Window(transient_for=self, modal=True)
+        dlg.set_title(t("secrets_dialog_title"))
+        dlg.set_default_size(560, 360)
+        dlg.add_css_class("token-modal-window")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(18)
+        box.set_margin_bottom(18)
+        box.set_margin_start(20)
+        box.set_margin_end(20)
+        dlg.set_child(box)
+
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+        icon.set_pixel_size(32)
+        hdr.append(icon)
+
+        t_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        t_box.set_hexpand(True)
+        lbl_title = Gtk.Label(label=t("secrets_dialog_title"), css_classes=["view-title"], xalign=0)
+        t_box.append(lbl_title)
+        lbl_desc = Gtk.Label(label=t("secrets_dialog_desc"), css_classes=["view-subtitle"], xalign=0, wrap=True)
+        t_box.append(lbl_desc)
+        hdr.append(t_box)
+        box.append(hdr)
+
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_vexpand(True)
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        scrolled.set_child(list_box)
+        box.append(scrolled)
+
+        for finding in self.last_scan_findings:
+            f_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            f_row.add_css_class("file-item-row")
+            tag = Gtk.Label(label=finding.get("rule", "Secret"), css_classes=["status-del"])
+            f_row.append(tag)
+            fn = f"{os.path.basename(finding.get('file', ''))}:{finding.get('line', 0)}"
+            fn_lbl = Gtk.Label(label=fn, css_classes=["stat-label"])
+            f_row.append(fn_lbl)
+            val_lbl = Gtk.Label(label=finding.get("preview", ""), xalign=0, hexpand=True)
+            f_row.append(val_lbl)
+            list_box.append(f_row)
+
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_row.append(Gtk.Box(hexpand=True))
+
+        btn_cancel = Gtk.Button(label=t("cancel"), css_classes=["subtle-btn"])
+        btn_cancel.connect("clicked", lambda b: dlg.close())
+        btn_row.append(btn_cancel)
+
+        if on_confirm:
+            btn_commit_anyway = Gtk.Button(label=t("commit_anyway"), css_classes=["primary-btn"])
+            def _commit_proceed():
+                dlg.close()
+                on_confirm()
+            btn_commit_anyway.connect("clicked", lambda b: _commit_proceed())
+            btn_row.append(btn_commit_anyway)
+
+        box.append(btn_row)
+        dlg.present()
+
+    def _show_error_dialog(self, title, msg):
+        dlg = Gtk.Window(transient_for=self, modal=True)
+        dlg.set_title(title)
+        dlg.set_default_size(440, 160)
+        dlg.add_css_class("token-modal-window")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box.set_margin_top(20)
+        box.set_margin_bottom(20)
+        box.set_margin_start(20)
+        box.set_margin_end(20)
+        dlg.set_child(box)
+
+        lbl = Gtk.Label(label=f"{title}\n{msg}", wrap=True, xalign=0)
+        box.append(lbl)
+
+        btn = Gtk.Button(label="OK", css_classes=["primary-btn"])
+        btn.set_halign(Gtk.Align.END)
+        btn.connect("clicked", lambda b: dlg.close())
+        box.append(btn)
         dlg.present()
 
 

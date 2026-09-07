@@ -372,3 +372,81 @@ class TrafficViewsChart(Gtk.Box):
 
         tex = surface_to_texture(surface, w * s, h * s)
         self.picture.set_paintable(tex)
+
+
+BRANCH_COLORS = [
+    (0.39, 0.40, 0.95),  # Indigo #6366f1 (main/default)
+    (0.22, 0.74, 0.97),  # Cyan #38bdf8
+    (0.13, 0.85, 0.55),  # Emerald #22c55e
+    (0.96, 0.62, 0.04),  # Amber #f59e0b
+    (0.95, 0.25, 0.37),  # Rose #f43f5e
+    (0.66, 0.33, 0.98),  # Purple #a855f7
+]
+
+
+class BranchGraphNodeWidget(Gtk.Box):
+    def __init__(self, col=0, max_cols=1, is_merge=False, is_head=False, h=38):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        lane_w = 18
+        self.w = max(36, (max_cols + 1) * lane_w)
+        self.h = h
+        self.col = col
+        self.is_merge = is_merge
+        self.is_head = is_head
+        self.scale = 2
+        
+        self.picture = Gtk.Picture()
+        self.picture.set_can_shrink(True)
+        self.picture.set_content_fit(Gtk.ContentFit.FILL)
+        self.picture.set_size_request(self.w, self.h)
+        self.append(self.picture)
+        self._render()
+
+    def _render(self):
+        w, h, s = self.w, self.h, self.scale
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w * s, h * s)
+        cr = cairo.Context(surface)
+        cr.scale(s, s)
+
+        lane_w = 18
+        cx = 12 + self.col * lane_w
+        cy = h / 2
+
+        color = BRANCH_COLORS[self.col % len(BRANCH_COLORS)]
+
+        # Vertical line for this column
+        cr.set_source_rgba(color[0], color[1], color[2], 0.75)
+        cr.set_line_width(2.0)
+        cr.move_to(cx, 0)
+        cr.line_to(cx, h)
+        cr.stroke()
+
+        # If merge, draw branch connection curve from parent
+        if self.is_merge and self.col > 0:
+            parent_cx = 12 + (self.col - 1) * lane_w
+            cr.set_source_rgba(color[0], color[1], color[2], 0.50)
+            cr.set_line_width(1.8)
+            cr.move_to(cx, cy)
+            cr.curve_to(cx - lane_w * 0.5, cy, parent_cx + lane_w * 0.5, cy + h * 0.4, parent_cx, h)
+            cr.stroke()
+
+        # Commit node circle
+        node_radius = 4.5 if not self.is_merge else 5.5
+        
+        # Outer glow
+        cr.set_source_rgba(color[0], color[1], color[2], 0.25)
+        cr.arc(cx, cy, node_radius + 2.5, 0, 2 * math.pi)
+        cr.fill()
+
+        # Node body
+        cr.set_source_rgb(color[0], color[1], color[2])
+        cr.arc(cx, cy, node_radius, 0, 2 * math.pi)
+        cr.fill()
+
+        # White inner dot
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.90)
+        cr.arc(cx, cy, 1.8, 0, 2 * math.pi)
+        cr.fill()
+
+        tex = surface_to_texture(surface, w * s, h * s)
+        self.picture.set_paintable(tex)

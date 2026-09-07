@@ -78,9 +78,51 @@ TRANSLATIONS = {
         "sound_fx": "Sound Feedback",
         "btn_refresh": "Refresh",
         "refreshing": "Updating repository data...",
-        "refresh_done": "Up to date",
+        "refresh_done": "Up to date ✓",
         "btn_open_repo": "Open Repository...",
         "lang_toggle_tooltip": "Switch Language (EN/RU)",
+        
+        # New Feature 1: Branches & Graph
+        "switch_branch": "Switch Branch",
+        "branches": "Branches",
+        "checkout_success": "Switched to branch",
+        "checkout_failed": "Failed to switch branch",
+        "merge": "Merge into Current",
+        
+        # New Feature 2: Stashes
+        "stashes": "Stashes",
+        "stash_shelf": "Stash Shelf",
+        "stash_shelf_sub": "Inspect stored working tree changes",
+        "apply": "Apply",
+        "pop": "Pop",
+        "drop": "Drop",
+        "no_stashes": "No stashes saved in this repository.",
+        "stash_applied": "Stash applied successfully",
+        "stash_dropped": "Stash discarded",
+        
+        # New Feature 3: Release Drafter
+        "draft_release": "Draft Release...",
+        "release_drafter_title": "Release Drafter & Changelog",
+        "release_drafter_sub": "Automatic Conventional Commit release synthesizer",
+        "tag_name": "Tag Name (e.g. v1.0.0)",
+        "release_name": "Release Title",
+        "changelog_preview": "Generated Changelog (Markdown)",
+        "copy_markdown": "Copy Markdown",
+        "markdown_copied": "Changelog copied to clipboard",
+        "create_tag": "Create Git Tag",
+        "tag_created": "Git tag created successfully",
+        
+        # New Feature 4: Secret Scanner
+        "scanner_clean": "Secrets: Clean",
+        "scanner_warning": "Secret Detected!",
+        "secrets_dialog_title": "Sensitive Data Warning",
+        "secrets_dialog_desc": "High-risk credentials, private keys, or API tokens were detected in staged files. Committing these may cause a critical security leak.",
+        "commit_anyway": "Commit Anyway",
+        
+        # New Feature 5: Quick Switcher
+        "quick_switcher_title": "Quick Switcher",
+        "quick_switcher_placeholder": "Search recent repositories (Ctrl+K)...",
+        "recent_repos": "Recent Repositories",
         
         "traffic_chart_title": "14-Day Traffic & Unique Visitors",
         "views_count": "views",
@@ -170,10 +212,51 @@ TRANSLATIONS = {
         "cancel": "Отмена",
         "sound_fx": "Звуковой отклик",
         "btn_refresh": "Обновить",
-        "refreshing": "Обновление данных репозитория...",
-        "refresh_done": "Данные обновлены",
+        "refresh_done": "Обновлено ✓",
         "btn_open_repo": "Открыть репозиторий...",
         "lang_toggle_tooltip": "Сменить язык (EN/RU)",
+        
+        # New Feature 1: Branches & Graph
+        "switch_branch": "Переключить ветку",
+        "branches": "Ветки",
+        "checkout_success": "Переключено на ветку",
+        "checkout_failed": "Ошибка переключения ветки",
+        "merge": "Слить в текущую ветку",
+        
+        # New Feature 2: Stashes
+        "stashes": "Тайники (Stash)",
+        "stash_shelf": "Полка изменений (Stash)",
+        "stash_shelf_sub": "Просмотр и восстановление сохраненных копий",
+        "apply": "Применить",
+        "pop": "Восстановить",
+        "drop": "Удалить",
+        "no_stashes": "В этом репозитории нет сохраненных изменений.",
+        "stash_applied": "Изменения успешно применены",
+        "stash_dropped": "Stash успешно удален",
+        
+        # New Feature 3: Release Drafter
+        "draft_release": "Создать релиз...",
+        "release_drafter_title": "Конструктор релизов и ченджлог",
+        "release_drafter_sub": "Автоматическая генерация описания релиза по коммитам",
+        "tag_name": "Имя тега (напр. v1.0.0)",
+        "release_name": "Заголовок релиза",
+        "changelog_preview": "Сформированный ченджлог (Markdown)",
+        "copy_markdown": "Копировать Markdown",
+        "markdown_copied": "Ченджлог скопирован в буфер",
+        "create_tag": "Создать Git-тег",
+        "tag_created": "Тег успешно создан",
+        
+        # New Feature 4: Secret Scanner
+        "scanner_clean": "Безопасность: чисто",
+        "scanner_warning": "Обнаружены секреты!",
+        "secrets_dialog_title": "Предупреждение безопасности",
+        "secrets_dialog_desc": "В подготовленных файлах обнаружены токены или приватные ключи. Коммит может привести к критической утечке данных в репозиторий.",
+        "commit_anyway": "Все равно закоммитить",
+        
+        # New Feature 5: Quick Switcher
+        "quick_switcher_title": "Быстрое переключение",
+        "quick_switcher_placeholder": "Поиск среди недавних репозиториев (Ctrl+K)...",
+        "recent_repos": "Недавние проекты",
         
         "traffic_chart_title": "Трафик и уникальные посетители (14 дней)",
         "views_count": "просмотров",
