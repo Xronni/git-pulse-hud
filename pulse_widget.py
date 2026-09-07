@@ -149,15 +149,18 @@ class CommitVelocityWidget(Gtk.Box):
                 cr.move_to(bx + bar_w / 2 - val_ext.width / 2, by - 6)
                 cr.show_text(val_str)
 
-            # Date Label below baseline
-            if i % max(1, n_bars // 7) == 0 or i == n_bars - 1:
-                cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-                cr.set_font_size(9)
+            # Date Label below baseline (every single day)
+            is_today = (i == n_bars - 1)
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if is_today else cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(8.5)
+            if is_today:
+                cr.set_source_rgba(0.85, 0.92, 1.0, 1.0)
+            else:
                 cr.set_source_rgba(0.50, 0.55, 0.65, 0.9)
-                lbl = item.get("label", "")
-                ext = cr.text_extents(lbl)
-                cr.move_to(bx + bar_w / 2 - ext.width / 2, h - 8)
-                cr.show_text(lbl)
+            lbl = item.get("label", "")
+            ext = cr.text_extents(lbl)
+            cr.move_to(bx + bar_w / 2 - ext.width / 2, h - 8)
+            cr.show_text(lbl)
 
         tex = surface_to_texture(surface, w * s, h * s)
         self.picture.set_paintable(tex)

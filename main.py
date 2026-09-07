@@ -158,6 +158,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         # Floating HUD Notification Banner with Spinner (smooth revealer)
         self.refresh_revealer = Gtk.Revealer()
+        self.refresh_revealer.set_can_focus(False)
+        self.refresh_revealer.set_focusable(False)
         self.refresh_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.refresh_revealer.set_transition_duration(280)
         self.refresh_revealer.set_valign(Gtk.Align.START)
@@ -165,10 +167,16 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.refresh_revealer.set_margin_top(14)
 
         self.refresh_banner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.refresh_banner.set_can_focus(False)
+        self.refresh_banner.set_focusable(False)
         self.refresh_banner.add_css_class("refresh-banner")
         self.refresh_spinner = Gtk.Spinner()
+        self.refresh_spinner.set_can_focus(False)
+        self.refresh_spinner.set_focusable(False)
         self.refresh_banner.append(self.refresh_spinner)
         self.refresh_lbl = Gtk.Label(label=t("refreshing"))
+        self.refresh_lbl.set_can_focus(False)
+        self.refresh_lbl.set_focusable(False)
         self.refresh_lbl.add_css_class("refresh-banner-text")
         self.refresh_banner.append(self.refresh_lbl)
 
@@ -862,8 +870,13 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     row.add_css_class("file-item-row")
                     n_lbl = Gtk.Label(label=a["name"], xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE)
                     row.append(n_lbl)
-                    d_lbl = Gtk.Label(label=f"{a['downloads']} dl", css_classes=["branch-badge"])
-                    row.append(d_lbl)
+                    d_badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                    d_badge.add_css_class("branch-badge")
+                    d_badge.append(Gtk.Label(label=str(a.get("downloads", 0))))
+                    d_icon = Gtk.Image.new_from_icon_name("folder-download-symbolic")
+                    d_icon.set_pixel_size(12)
+                    d_badge.append(d_icon)
+                    row.append(d_badge)
                     self.releases_container.append(row)
         else:
             self.releases_container.append(Gtk.Label(label=t("no_releases"), css_classes=["stat-label"], xalign=0))
@@ -967,7 +980,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.refresh_lbl.set_text(f"✓ {t('refresh_done')}")
         self.sound.play("commit")
 
-        # Keep spinner continuously spinning and notification visible for 3.5 - 4 seconds!
+        # Keep spinner continuously spinning and notification visible for 2 seconds
         def _start_hide():
             self.refresh_revealer.set_reveal_child(False)
             self._refresh_timer_id = None
@@ -982,8 +995,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self._refresh_finish_timer_id = None
             return False
 
-        self._refresh_timer_id = GLib.timeout_add(3500, _start_hide)
-        self._refresh_finish_timer_id = GLib.timeout_add(3850, _complete_hide)
+        self._refresh_timer_id = GLib.timeout_add(2000, _start_hide)
+        self._refresh_finish_timer_id = GLib.timeout_add(2300, _complete_hide)
 
     def _load_repo_data(self):
         if not self.git.is_valid():
