@@ -1206,9 +1206,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.add_css_class("file-item-row")
 
+        filepath = item.get("path", "")
+
         check = Gtk.CheckButton()
         check.set_active(is_staged)
-        check.connect("toggled", lambda cb: self._toggle_stage_file(item["path"], is_staged))
+        check.connect("toggled", lambda cb, fp=filepath, st=is_staged: self._toggle_stage_file(fp, st))
         row.append(check)
 
         st_char = item.get("status", "M")
@@ -1221,7 +1223,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             badge.add_css_class("status-del")
         row.append(badge)
 
-        path_lbl = Gtk.Label(label=item["path"], xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE)
+        path_lbl = Gtk.Label(label=filepath, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE)
         row.append(path_lbl)
 
         add = item.get("lines_add", 0)
@@ -1238,7 +1240,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         btn_diff.set_icon_name("edit-find-symbolic")
         btn_diff.set_tooltip_text(t("view_diff"))
         btn_diff.add_css_class("subtle-icon-btn")
-        btn_diff.connect("clicked", lambda b: self._show_diff(item["path"], is_staged))
+        btn_diff.connect("clicked", lambda b, fp=filepath, st=is_staged: self._show_diff(fp, st))
         row.append(btn_diff)
 
         self.files_container.append(row)
@@ -1307,6 +1309,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 self._do_push()
         else:
             self.sound.play("error")
+            err_msg = out.strip() if out else "Nothing to commit or commit failed."
+            self._show_error_dialog(t("commit_failed"), err_msg)
 
     def _do_push(self):
         def _bg():

@@ -48,14 +48,14 @@ class GitEngine:
             return ""
         try:
             res = subprocess.run(
-                ["git"] + args,
+                ["git", "-c", "core.quotepath=false"] + args,
                 cwd=self.root_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=check
             )
-            return res.stdout.strip()
+            return res.stdout.rstrip("\r\n")
         except Exception:
             return ""
 
@@ -81,10 +81,10 @@ class GitEngine:
         return None, None
 
     def get_current_branch(self):
-        branch = self._run(["branch", "--show-current"])
+        branch = self._run(["branch", "--show-current"]).strip()
         if not branch:
             # Maybe detached HEAD
-            commit = self._run(["rev-parse", "--short", "HEAD"])
+            commit = self._run(["rev-parse", "--short", "HEAD"]).strip()
             return f"HEAD ({commit})" if commit else "no commits"
         return branch
 
@@ -92,7 +92,7 @@ class GitEngine:
         branch = self.get_current_branch()
         if not branch or "HEAD" in branch:
             return 0, 0
-        upstream = self._run(["rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"])
+        upstream = self._run(["rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"]).strip()
         if not upstream:
             return 0, 0
         counts = self._run(["rev-list", "--left-right", "--count", f"{upstream}...{branch}"])
@@ -130,7 +130,10 @@ class GitEngine:
                 if len(parts) >= 3:
                     add = int(parts[0]) if parts[0].isdigit() else 0
                     dels = int(parts[1]) if parts[1].isdigit() else 0
-                    staged_stats[parts[2]] = (add, dels)
+                    p = parts[2].strip()
+                    if p.startswith('"') and p.endswith('"'):
+                        p = p[1:-1]
+                    staged_stats[p] = (add, dels)
 
         # Get line numbers stat for unstaged
         unstaged_stats = {}
@@ -141,7 +144,10 @@ class GitEngine:
                 if len(parts) >= 3:
                     add = int(parts[0]) if parts[0].isdigit() else 0
                     dels = int(parts[1]) if parts[1].isdigit() else 0
-                    unstaged_stats[parts[2]] = (add, dels)
+                    p = parts[2].strip()
+                    if p.startswith('"') and p.endswith('"'):
+                        p = p[1:-1]
+                    unstaged_stats[p] = (add, dels)
 
         # Porcelain v1 status
         status_out = self._run(["status", "--porcelain=v1", "-uall"])
@@ -153,7 +159,9 @@ class GitEngine:
                 work_st = line[1]
                 path = line[3:].strip()
                 if " -> " in path:
-                    path = path.split(" -> ")[1]
+                    path = path.split(" -> ")[1].strip()
+                if path.startswith('"') and path.endswith('"'):
+                    path = path[1:-1]
 
                 # Untracked
                 if index_st == "?" and work_st == "?":
@@ -192,11 +200,13 @@ class GitEngine:
         }
 
     def stage_file(self, filepath):
-        res = subprocess.run(["git", "add", filepath], cwd=self.root_path, capture_output=True, check=False)
+        res = subprocess.run(["git", "add", "--", filepath], cwd=self.root_path, capture_output=True, check=False)
         return res.returncode == 0
 
     def unstage_file(self, filepath):
-        res = subprocess.run(["git", "restore", "--staged", filepath], cwd=self.root_path, capture_output=True, check=False)
+        res = subprocess.run(["git", "restore", "--staged", "--", filepath], cwd=self.root_path, capture_output=True, check=False)
+        if res.returncode != 0:
+            res = subprocess.run(["git", "reset", "HEAD", "--", filepath], cwd=self.root_path, capture_output=True, check=False)
         return res.returncode == 0
 
     def stage_all(self):
@@ -424,7 +434,19 @@ class GitEngine:
         if staged:
             args.append("--cached")
         args.extend(["--", filepath])
-        return self._run(args)
+        diff = self._run(args)
+        if not diff and not staged and self.root_path:
+            full_p = os.path.join(self.root_path, filepath)
+            if os.path.exists(full_p) and not os.path.isdir(full_p):
+                res = subprocess.run(
+                    ["git", "-c", "core.quotepath=false", "diff", "--no-index", "/dev/null", filepath],
+                    cwd=self.root_path,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                return res.stdout.rstrip("\r\n")
+        return diff
 
     # --- Pulse & Analytics Methods ---
 

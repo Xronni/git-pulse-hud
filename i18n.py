@@ -84,6 +84,7 @@ TRANSLATIONS = {
         "btn_push": "Push",
         "btn_push_ahead": "Push Commits to GitHub",
         "push_failed": "Push Failed",
+        "commit_failed": "Commit Failed",
         
         # New Feature 1: Branches & Graph
         "switch_branch": "Switch Branch",
@@ -222,6 +223,7 @@ TRANSLATIONS = {
         "btn_push": "Отправить",
         "btn_push_ahead": "Отправить коммиты на GitHub",
         "push_failed": "Ошибка отправки коммитов",
+        "commit_failed": "Ошибка создания коммита",
         
         # New Feature 1: Branches & Graph
         "switch_branch": "Переключить ветку",

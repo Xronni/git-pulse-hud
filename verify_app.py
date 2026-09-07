@@ -159,6 +159,42 @@ def test_git_engine():
         ok, out = ge.commit("feat: initial commit")
         report("Commit Execution", ok, f"Commit output: {out.strip() if out else 'OK'}")
 
+        # Dotfile handling verification (specifically addresses .gitignore porcelain bugs)
+        ign_path = os.path.join(tmp_dir, ".gitignore")
+        with open(ign_path, "w") as f:
+            f.write("*.pyc\n__pycache__/\n")
+        
+        # Untracked dotfile detection
+        st_untracked = ge.get_status_files()
+        report("Dotfile Untracked Detection", any(x["path"] == ".gitignore" for x in st_untracked["untracked"]), "Detected untracked .gitignore")
+
+        # Stage .gitignore
+        ge.stage_file(".gitignore")
+        st_staged = ge.get_status_files()
+        report("Dotfile Staging & Path Preservation", any(x["path"] == ".gitignore" for x in st_staged["staged"]) and not any(x["path"] == "gitignore" for x in st_staged["staged"]), "Correctly staged .gitignore without dot truncation")
+
+        # Unstage .gitignore
+        ge.unstage_file(".gitignore")
+        st_unstaged = ge.get_status_files()
+        report("Dotfile Unstaging & Restoration", any(x["path"] == ".gitignore" for x in st_unstaged["untracked"] + st_unstaged["unstaged"]), "Correctly unstaged .gitignore")
+
+        # Stage and commit .gitignore
+        ge.stage_file(".gitignore")
+        ge.commit("chore: add .gitignore")
+
+        # Modify .gitignore (producing porcelain output with leading space: ' M .gitignore')
+        with open(ign_path, "a") as f:
+            f.write("*.log\n")
+        st_mod = ge.get_status_files()
+        is_mod_unstaged = any(x["path"] == ".gitignore" for x in st_mod["unstaged"]) and not any(x["path"] == ".gitignore" for x in st_mod["staged"])
+        report("Unstaged Porcelain Whitespace Parsing", is_mod_unstaged, "Accurately classified ' M .gitignore' as unstaged, not staged")
+
+        # Stage and commit .gitignore
+        ge.stage_file(".gitignore")
+        ge.commit("chore: update .gitignore")
+        st_clean = ge.get_status_files()
+        report("Dotfile Commit & Working Tree Clearance", not any(x["path"] == ".gitignore" for x in st_clean["staged"] + st_clean["unstaged"]), "Successfully committed .gitignore and cleared status")
+
         subprocess.run(["git", "branch", "feature-x"], cwd=tmp_dir, capture_output=True, check=True)
         branches = ge.list_branches_detailed()
         has_branches = any(b["name"] == "feature-x" for b in branches)
