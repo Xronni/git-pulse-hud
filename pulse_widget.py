@@ -11,6 +11,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gdk', '4.0')
 from gi.repository import Gtk, Gdk, GLib
+from i18n import t, format_date_label
 
 
 def rounded_rectangle(cr, x, y, w, h, r):
@@ -75,7 +76,7 @@ class CommitVelocityWidget(Gtk.Box):
             cr.set_source_rgba(0.55, 0.60, 0.72, 0.85)
             cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
             cr.set_font_size(12)
-            msg = "No commit activity in the last 14 days"
+            msg = t("no_velocity_title")
             ext = cr.text_extents(msg)
             cr.move_to((w - ext.width) / 2, h / 2 - 2)
             cr.show_text(msg)
@@ -83,7 +84,7 @@ class CommitVelocityWidget(Gtk.Box):
             cr.set_source_rgba(0.40, 0.45, 0.55, 0.75)
             cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(10)
-            sub = "Activity will appear here as commits are made to this branch"
+            sub = t("no_velocity_desc")
             sub_ext = cr.text_extents(sub)
             cr.move_to((w - sub_ext.width) / 2, h / 2 + 18)
             cr.show_text(sub)
@@ -157,7 +158,8 @@ class CommitVelocityWidget(Gtk.Box):
                 cr.set_source_rgba(0.85, 0.92, 1.0, 1.0)
             else:
                 cr.set_source_rgba(0.50, 0.55, 0.65, 0.9)
-            lbl = item.get("label", "")
+            d_val = item.get("date", "")
+            lbl = format_date_label(d_val) if d_val else item.get("label", "")
             ext = cr.text_extents(lbl)
             cr.move_to(bx + bar_w / 2 - ext.width / 2, h - 8)
             cr.show_text(lbl)
@@ -276,7 +278,7 @@ class TrafficViewsChart(Gtk.Box):
             cr.set_source_rgba(0.55, 0.60, 0.72, 0.85)
             cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
             cr.set_font_size(12)
-            msg = "Configure GitHub Access Token to view 14-day traffic trend"
+            msg = t("token_banner_title")
             ext = cr.text_extents(msg)
             cr.move_to((w - ext.width) / 2, h / 2 - 2)
             cr.show_text(msg)
@@ -284,7 +286,7 @@ class TrafficViewsChart(Gtk.Box):
             cr.set_source_rgba(0.40, 0.45, 0.55, 0.75)
             cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
             cr.set_font_size(10)
-            sub = "Page views and visitor telemetry require repository access permissions"
+            sub = t("traffic_no_data")
             sub_ext = cr.text_extents(sub)
             cr.move_to((w - sub_ext.width) / 2, h / 2 + 18)
             cr.show_text(sub)

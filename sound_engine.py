@@ -14,7 +14,7 @@ import tempfile
 import subprocess
 import shutil
 
-SOUND_DIR = os.path.join(tempfile.gettempdir(), "git_pulse_sounds")
+SOUND_DIR = os.path.join(tempfile.gettempdir(), "git_pulse_sounds_v3")
 
 
 class SoundEngine:
@@ -27,8 +27,8 @@ class SoundEngine:
         self._prewarm_audio()
 
     def _detect_player(self):
-        # canberra-gtk-play is the official GNOME event sound utility, lowest latency & zero-drop
-        for player in ["canberra-gtk-play", "pw-play", "paplay", "aplay"]:
+        # Native PipeWire (pw-play) and PulseAudio (paplay) offer direct zero-drop socket playback
+        for player in ["pw-play", "paplay", "canberra-gtk-play", "aplay"]:
             if shutil.which(player):
                 return player
         return None
@@ -53,76 +53,76 @@ class SoundEngine:
             print(f"[SoundEngine] Preload error: {e}")
 
     def _prewarm_audio(self):
-        """Wakes up the audio daemon (PipeWire / PulseAudio) silently on startup."""
+        """Wakes up the audio daemon (PipeWire / PulseAudio / USB DAC) on startup."""
         if not self._player:
             return
         warmup_file = self._cache.get("warmup")
         if warmup_file and os.path.exists(warmup_file):
             try:
-                if self._player == "canberra-gtk-play":
-                    subprocess.Popen(
-                        ["canberra-gtk-play", "-f", warmup_file],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                else:
-                    subprocess.Popen(
-                        [self._player, warmup_file],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
+                cmd = ["canberra-gtk-play", "-f", warmup_file] if self._player == "canberra-gtk-play" else [self._player, warmup_file]
+                subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
             except Exception:
                 pass
 
     def _gen_warmup(self, sample_rate=44100):
-        # 5ms of near-silence to open sink immediately
-        frames = [struct.pack('<h', 0) for _ in range(int(0.005 * sample_rate))]
+        # 40ms of gentle low dither to wake up audio sink & wireless DAC
+        duration = 0.040
+        n_samples = int(duration * sample_rate)
+        frames = []
+        for i in range(n_samples):
+            val = math.sin(2 * math.pi * 60 * (i / sample_rate)) * 0.001
+            sample = int(val * 32767)
+            frames.append(struct.pack('<h', sample))
         return self._build_wav(b''.join(frames), sample_rate)
 
     def _gen_click(self, sample_rate=44100):
-        # Crisp tactile mechanical click (30ms)
-        duration = 0.030
+        # Crisp tactile mechanical switch click (50ms)
+        duration = 0.050
         n_samples = int(duration * sample_rate)
         frames = []
         for i in range(n_samples):
             t = i / sample_rate
-            env = math.exp(-t * 200)
-            val = (0.75 * math.sin(2 * math.pi * 1400 * t) + 0.25 * math.sin(2 * math.pi * 2600 * t)) * env
-            sample = int(val * 32767 * 0.45)
+            env = math.exp(-t * 90)
+            val = (0.70 * math.sin(2 * math.pi * 1400 * t) + 0.30 * math.sin(2 * math.pi * 2600 * t)) * env
+            sample = int(val * 32767 * 0.55)
             frames.append(struct.pack('<h', max(-32768, min(32767, sample))))
         return self._build_wav(b''.join(frames), sample_rate)
 
     def _gen_pop(self, sample_rate=44100):
-        # Soft pop (35ms)
-        duration = 0.035
+        # Tactile soft pop (55ms)
+        duration = 0.055
         n_samples = int(duration * sample_rate)
         frames = []
         for i in range(n_samples):
             t = i / sample_rate
-            freq = 650 * (1.0 - t / duration * 0.5)
-            env = math.sin(math.pi * (t / duration)) ** 2
+            freq = 700 * (1.0 - t / duration * 0.45)
+            env = math.sin(math.pi * (t / duration)) ** 1.8
             val = math.sin(2 * math.pi * freq * t) * env
-            sample = int(val * 32767 * 0.45)
+            sample = int(val * 32767 * 0.55)
             frames.append(struct.pack('<h', max(-32768, min(32767, sample))))
         return self._build_wav(b''.join(frames), sample_rate)
 
     def _gen_commit(self, sample_rate=44100):
-        # Affirmative harmonic chime (140ms)
-        duration = 0.14
+        # Affirmative harmonic chime (160ms)
+        duration = 0.16
         n_samples = int(duration * sample_rate)
         frames = []
-        freqs = [659.25, 830.61, 987.77]
+        freqs = [659.25, 830.61, 987.77, 1318.51]  # E5, G#5, B5, E6
         for i in range(n_samples):
             t = i / sample_rate
-            env = math.exp(-t * 22)
+            env = math.exp(-t * 18)
             val = sum(math.sin(2 * math.pi * f * t) for f in freqs) / len(freqs) * env
-            sample = int(val * 32767 * 0.45)
+            sample = int(val * 32767 * 0.55)
             frames.append(struct.pack('<h', max(-32768, min(32767, sample))))
         return self._build_wav(b''.join(frames), sample_rate)
 
     def _gen_push(self, sample_rate=44100):
-        # Ascending swoosh (200ms)
-        duration = 0.20
+        # Ascending swoosh (220ms)
+        duration = 0.22
         n_samples = int(duration * sample_rate)
         frames = []
         for i in range(n_samples):
@@ -134,21 +134,22 @@ class SoundEngine:
                 freq = 659.25
             else:
                 freq = 783.99
-            env = math.exp(-((t % (duration / 3)) * 25))
+            env = math.exp(-((t % (duration / 3)) * 20))
             val = math.sin(2 * math.pi * freq * t) * env
-            sample = int(val * 32767 * 0.42)
+            sample = int(val * 32767 * 0.50)
             frames.append(struct.pack('<h', max(-32768, min(32767, sample))))
         return self._build_wav(b''.join(frames), sample_rate)
 
     def _gen_error(self, sample_rate=44100):
-        duration = 0.08
+        # Subtle double muted knock (120ms)
+        duration = 0.12
         n_samples = int(duration * sample_rate)
         frames = []
         for i in range(n_samples):
             t = i / sample_rate
-            env = math.exp(-t * 35)
-            val = math.sin(2 * math.pi * 180 * t) * env
-            sample = int(val * 32767 * 0.45)
+            env = math.exp(-((t % 0.06) * 45))
+            val = math.sin(2 * math.pi * 220 * t) * env
+            sample = int(val * 32767 * 0.50)
             frames.append(struct.pack('<h', max(-32768, min(32767, sample))))
         return self._build_wav(b''.join(frames), sample_rate)
 
@@ -170,18 +171,12 @@ class SoundEngine:
             return
 
         try:
-            if self._player == "canberra-gtk-play":
-                subprocess.Popen(
-                    ["canberra-gtk-play", "-f", filepath],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-            else:
-                subprocess.Popen(
-                    [self._player, filepath],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
+            cmd = ["canberra-gtk-play", "-f", filepath] if self._player == "canberra-gtk-play" else [self._player, filepath]
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
         except Exception:
             pass
 

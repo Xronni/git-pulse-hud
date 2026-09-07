@@ -557,7 +557,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             author_lbl.add_css_class("stat-label")
             row.append(author_lbl)
 
-            date_lbl = Gtk.Label(label=c["relative_date"])
+            date_lbl = Gtk.Label(label=i18n.format_relative_time(c["relative_date"]))
             date_lbl.add_css_class("stat-label")
             row.append(date_lbl)
 
@@ -743,7 +743,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         chart_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         chart_card.add_css_class("hud-card")
         chart_card.set_hexpand(True)
-        self.lbl_traffic_hdr = Gtk.Label(label="14-Day Traffic & Unique Visitors", css_classes=["hud-card-header"], xalign=0)
+        self.lbl_traffic_hdr = Gtk.Label(label=t("traffic_chart_title"), css_classes=["hud-card-header"], xalign=0)
         self.lbl_traffic_hdr.set_ellipsize(Pango.EllipsizeMode.END)
         chart_card.append(self.lbl_traffic_hdr)
         self.views_chart = TrafficViewsChart()
@@ -850,9 +850,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                 row.add_css_class("file-item-row")
                 lbl = Gtk.Label(label=ref["site"], xalign=0, hexpand=True)
                 row.append(lbl)
-                v_lbl = Gtk.Label(label=f"{ref['views']} views", css_classes=["ahead-badge"])
+                v_lbl = Gtk.Label(label=f"{ref['views']} {t('views_count')}", css_classes=["ahead-badge"])
                 row.append(v_lbl)
-                u_lbl = Gtk.Label(label=f"{ref['uniques']} uniques", css_classes=["branch-badge"])
+                u_lbl = Gtk.Label(label=f"{ref['uniques']} {t('uniques_count')}", css_classes=["branch-badge"])
                 row.append(u_lbl)
                 self.referrers_container.append(row)
         else:
@@ -915,6 +915,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_pulse_sub.set_text(t("sub_pulse"))
         self.lbl_vel_hdr.set_text(t("velocity_title"))
         self.lbl_punch_hdr.set_text(t("punchcard_title"))
+        self.card_commits.lbl_widget.set_text(t("stat_commits"))
+        self.card_authors.lbl_widget.set_text(t("stat_contributors"))
+        self.card_files.lbl_widget.set_text(t("stat_files"))
+        self.card_stashes.lbl_widget.set_text(t("stat_stashes"))
 
         # View 4
         self.lbl_view4_title.set_text(t("tab_telemetry"))
@@ -926,6 +930,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.ins_forks.lbl_widget.set_text(t("forks"))
         self.ins_downloads.lbl_widget.set_text(t("downloads"))
         self.ins_issues.lbl_widget.set_text(t("open_issues"))
+        self.lbl_traffic_hdr.set_text(t("traffic_chart_title"))
         self.lbl_rx_hdr.set_text(t("reactions"))
         self.lbl_ref_hdr.set_text(t("top_referrers"))
         self.lbl_rel_hdr.set_text(t("release_downloads"))
@@ -995,8 +1000,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self._refresh_finish_timer_id = None
             return False
 
-        self._refresh_timer_id = GLib.timeout_add(2000, _start_hide)
-        self._refresh_finish_timer_id = GLib.timeout_add(2300, _complete_hide)
+        self._refresh_timer_id = GLib.timeout_add(1500, _start_hide)
+        self._refresh_finish_timer_id = GLib.timeout_add(1800, _complete_hide)
 
     def _load_repo_data(self):
         if not self.git.is_valid():
@@ -1148,7 +1153,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         btn_diff = Gtk.Button()
         btn_diff.set_icon_name("edit-find-symbolic")
-        btn_diff.set_tooltip_text("View Diff")
+        btn_diff.set_tooltip_text(t("view_diff"))
         btn_diff.add_css_class("subtle-icon-btn")
         btn_diff.connect("clicked", lambda b: self._show_diff(item["path"], is_staged))
         row.append(btn_diff)

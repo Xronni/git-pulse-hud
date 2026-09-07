@@ -82,6 +82,17 @@ TRANSLATIONS = {
         "btn_open_repo": "Open Repository...",
         "lang_toggle_tooltip": "Switch Language (EN/RU)",
         
+        "traffic_chart_title": "14-Day Traffic & Unique Visitors",
+        "views_count": "views",
+        "uniques_count": "uniques",
+        "diff_title": "Diff",
+        "staged_diff_sub": "Staged in Index",
+        "unstaged_diff_sub": "Unstaged Working Tree Changes",
+        "stage_file": "Stage File",
+        "unstage_file": "Unstage File",
+        "no_diff_detected": "(No differences detected or binary file)",
+        "view_diff": "View Diff",
+        
         # Empty / Welcome State
         "no_repo_title": "No Repository Selected",
         "no_repo_desc": "Open a local Git repository to start staging changes, inspecting commits, and viewing analytics.",
@@ -164,6 +175,17 @@ TRANSLATIONS = {
         "btn_open_repo": "Открыть репозиторий...",
         "lang_toggle_tooltip": "Сменить язык (EN/RU)",
         
+        "traffic_chart_title": "Трафик и уникальные посетители (14 дней)",
+        "views_count": "просмотров",
+        "uniques_count": "посетителей",
+        "diff_title": "Различия",
+        "staged_diff_sub": "Подготовленные изменения в индексе",
+        "unstaged_diff_sub": "Неподготовленные изменения рабочей копии",
+        "stage_file": "Подготовить",
+        "unstage_file": "Отменить подготовку",
+        "no_diff_detected": "(Различий не обнаружено или бинарный файл)",
+        "view_diff": "Просмотреть различия",
+        
         # Empty / Welcome State
         "no_repo_title": "Репозиторий не выбран",
         "no_repo_desc": "Выберите локальный Git-репозиторий для подготовки коммитов, просмотра истории и аналитики.",
@@ -173,6 +195,9 @@ TRANSLATIONS = {
 }
 
 CURRENT_LANG = "en"
+
+MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+MONTHS_RU = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
 
 def set_language(lang):
     global CURRENT_LANG
@@ -184,3 +209,43 @@ def get_language():
 
 def t(key):
     return TRANSLATIONS.get(CURRENT_LANG, {}).get(key, TRANSLATIONS["en"].get(key, key))
+
+def format_date_label(d_str):
+    """Localizes 'YYYY-MM-DD' into 'DD Mon' (e.g. '07 Sep' in EN, '07 сен' in RU)."""
+    try:
+        parts = d_str.split("-")
+        day_num = parts[2]
+        month_idx = int(parts[1]) - 1
+        months = MONTHS_RU if CURRENT_LANG == "ru" else MONTHS_EN
+        return f"{day_num} {months[month_idx]}"
+    except Exception:
+        return d_str
+
+def format_relative_time(rel_str):
+    """Localizes git relative time into Russian when active language is RU."""
+    if CURRENT_LANG != "ru" or not rel_str:
+        return rel_str
+
+    s = rel_str.strip()
+    replacements = [
+        ("seconds ago", "сек. назад"),
+        ("second ago", "сек. назад"),
+        ("minutes ago", "мин. назад"),
+        ("minute ago", "мин. назад"),
+        ("hours ago", "ч. назад"),
+        ("hour ago", "ч. назад"),
+        ("days ago", "дн. назад"),
+        ("day ago", "дн. назад"),
+        ("weeks ago", "нед. назад"),
+        ("week ago", "нед. назад"),
+        ("months ago", "мес. назад"),
+        ("month ago", "мес. назад"),
+        ("years ago", "г. назад"),
+        ("year ago", "г. назад"),
+        ("yesterday", "вчера"),
+        ("just now", "только что")
+    ]
+    for eng, ru in replacements:
+        if eng in s:
+            return s.replace(eng, ru)
+    return s

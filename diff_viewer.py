@@ -7,12 +7,13 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Pango
+from i18n import t
 
 
 class DiffViewerDialog(Gtk.Window):
     def __init__(self, parent, filename, diff_text, is_staged=False, on_stage_toggle=None):
         super().__init__(transient_for=parent, modal=True)
-        self.set_title(f"Diff — {filename}")
+        self.set_title(f"{t('diff_title')} — {filename}")
         self.set_default_size(780, 540)
         self.add_css_class("diff-window-view")
 
@@ -27,12 +28,12 @@ class DiffViewerDialog(Gtk.Window):
         header = Adw.HeaderBar()
         title_widget = Adw.WindowTitle(
             title=filename,
-            subtitle="Staged in Index" if is_staged else "Unstaged Working Tree Changes"
+            subtitle=t("staged_diff_sub") if is_staged else t("unstaged_diff_sub")
         )
         header.set_title_widget(title_widget)
 
         # Quick action button in header
-        btn_action = Gtk.Button(label="Unstage" if is_staged else "Stage File")
+        btn_action = Gtk.Button(label=t("unstage_file") if is_staged else t("stage_file"))
         btn_action.add_css_class("suggested-action" if not is_staged else "destructive-action")
         btn_action.connect("clicked", self._on_action_clicked)
         header.pack_end(btn_action)
@@ -68,7 +69,7 @@ class DiffViewerDialog(Gtk.Window):
         lines = diff_text.splitlines()
         if not lines:
             iter_end = buffer.get_end_iter()
-            buffer.insert(iter_end, "(No differences detected or binary file)")
+            buffer.insert(iter_end, t("no_diff_detected"))
             return
 
         for line in lines:
