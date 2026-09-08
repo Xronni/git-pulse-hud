@@ -394,6 +394,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_stash_shelf.connect("clicked", lambda b: self._on_open_stashes())
         top_row.append(self.btn_stash_shelf)
 
+        self.btn_publish_top = Gtk.Button(label=f"☁️ {t('publish_btn')}")
+        self.btn_publish_top.add_css_class("suggested-action")
+        self.btn_publish_top.connect("clicked", self._on_publish_dialog)
+        self.btn_publish_top.set_visible(False)
+        top_row.append(self.btn_publish_top)
+
         self.btn_push_only = Gtk.Button(label=f"↑ {t('btn_push')}")
         self.btn_push_only.add_css_class("primary-btn")
         self.btn_push_only.connect("clicked", lambda b: self._do_push())
@@ -956,8 +962,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_view1_title.set_text(t("tab_changes"))
         self.lbl_changes_sub.set_text(t("sub_changes"))
         self.btn_stash_shelf.set_label(f"📦 {t('stashes')}")
+        self.btn_publish_top.set_label(f"☁️ {t('publish_btn')}")
+        is_published = self.git.is_valid() and self.git.has_remote("origin")
+        self.btn_publish_top.set_visible(self.git.is_valid() and not is_published)
         ahead, _ = self.git.get_ahead_behind() if self.git.is_valid() else (0, 0)
-        if ahead > 0:
+        if ahead > 0 and is_published:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
             self.btn_push_only.set_visible(True)
         else:
@@ -1082,7 +1091,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.sidebar_branch.set_text(self.git.get_current_branch())
         ahead, behind = self.git.get_ahead_behind()
         self.sidebar_ahead.set_text(f"↑{ahead} ↓{behind}")
-        if ahead > 0:
+        has_remote = self.git.has_remote("origin")
+        self.btn_publish_top.set_visible(not has_remote)
+        if ahead > 0 and has_remote:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
             self.btn_push_only.set_visible(True)
         else:
@@ -1094,6 +1105,30 @@ class GitPulseWindow(Gtk.ApplicationWindow):
     def _refresh_changes_view(self):
         while child := self.files_container.get_first_child():
             self.files_container.remove(child)
+
+        # Show Publish to GitHub banner if repo has no origin remote
+        if not self.git.has_remote("origin"):
+            publish_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+            publish_card.add_css_class("token-banner-card")
+
+            p_icon = Gtk.Image.new_from_icon_name("send-to-symbolic")
+            p_icon.set_pixel_size(32)
+            publish_card.append(p_icon)
+
+            p_textbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            p_textbox.set_hexpand(True)
+            p_title = Gtk.Label(label=t("publish_card_title"), css_classes=["token-banner-title"], xalign=0)
+            p_desc = Gtk.Label(label=t("publish_card_desc"), css_classes=["token-banner-desc"], xalign=0, wrap=True)
+            p_textbox.append(p_title)
+            p_textbox.append(p_desc)
+            publish_card.append(p_textbox)
+
+            btn_publish_card = Gtk.Button(label=t("publish_btn"))
+            btn_publish_card.add_css_class("primary-btn")
+            btn_publish_card.connect("clicked", self._on_publish_dialog)
+            publish_card.append(btn_publish_card)
+
+            self.files_container.append(publish_card)
 
         status = self.git.get_status_files()
         staged = status.get("staged", [])
@@ -1165,20 +1200,27 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         d_lbl.set_max_width_chars(50)
         box.append(d_lbl)
 
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_row.set_halign(Gtk.Align.CENTER)
+
         btn = Gtk.Button(label=t("btn_open_repo"))
         btn.add_css_class("primary-btn")
         btn.connect("clicked", self._on_choose_repo)
-        box.append(btn)
+        btn_row.append(btn)
+
+        btn_init = Gtk.Button(label="✨ " + t("btn_init_repo"))
+        btn_init.add_css_class("suggested-action")
+        btn_init.connect("clicked", self._on_init_repo_clicked)
+        btn_row.append(btn_init)
+
+        box.append(btn_row)
 
         self.files_container.append(box)
 
     def _render_empty_changes(self, title, subtitle):
-        while child := self.files_container.get_first_child():
-            self.files_container.remove(child)
-
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.set_margin_top(60)
-        box.set_margin_bottom(60)
+        box.set_margin_top(40)
+        box.set_margin_bottom(40)
         box.set_halign(Gtk.Align.CENTER)
 
         icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
@@ -1372,8 +1414,47 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                         self._refresh_telemetry_view()
                 else:
                     self.sound.play("error")
+                    self.git.repo_path = path
+                    self.git.root_path = None
+                    self._load_repo_data()
         except Exception as e:
             print(f"[Repo] Folder select error: {e}")
+
+    def _on_init_repo_clicked(self, btn):
+        self.sound.play("click")
+        target_path = self.git.repo_path or os.getcwd()
+        ok, msg = self.git.init_repo(target_path)
+        if ok:
+            self.sound.play("commit")
+            self.config["last_repo"] = target_path
+            self.config["first_run_completed"] = True
+            if "recent_repos" not in self.config or not isinstance(self.config["recent_repos"], list):
+                self.config["recent_repos"] = []
+            if target_path not in self.config["recent_repos"]:
+                self.config["recent_repos"].insert(0, target_path)
+            self._save_config()
+            self._load_repo_data()
+        else:
+            self.sound.play("error")
+            self._show_error_dialog(t("btn_init_repo"), msg)
+
+    def _on_publish_dialog(self, btn):
+        self.sound.play("click")
+        from publish_dialog import PublishToGitHubDialog
+        dlg = PublishToGitHubDialog(
+            parent=self,
+            git_engine=self.git,
+            telemetry_client=self.telemetry,
+            sound_engine=self.sound,
+            config=self.config,
+            on_published=self._on_published_success
+        )
+        dlg.present()
+
+    def _on_published_success(self, repo_data):
+        self._load_repo_data()
+        if self.active_view == "telemetry":
+            self._refresh_telemetry_view()
 
     def _on_toggle_sound(self, btn):
         self.sound.enabled = not self.sound.enabled

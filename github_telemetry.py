@@ -39,6 +39,46 @@ class GitHubTelemetry:
                 err_msg = err_body.get("message", e.reason)
             except Exception:
                 pass
+        except Exception as e:
+            return None, str(e)
+
+    def get_user_profile(self):
+        """Returns (user_dict, error). user_dict has 'login', 'name', 'avatar_url', etc."""
+        if not self.token:
+            return None, "No token configured"
+        return self._make_request("/user")
+
+    def create_remote_repo(self, name, description="", private=False):
+        """Creates a repository on GitHub under the authenticated user's account."""
+        if not self.token:
+            return None, "No GitHub token configured"
+        url = "https://api.github.com/user/repos"
+        payload = json.dumps({
+            "name": name,
+            "description": description,
+            "private": private,
+            "auto_init": False
+        }).encode("utf-8")
+
+        req = urllib.request.Request(url, data=payload, method="POST")
+        req.add_header("User-Agent", "GitPulse-HUD/1.1")
+        req.add_header("Accept", "application/vnd.github.v3+json")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("Content-Type", "application/json")
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data, None
+        except urllib.error.HTTPError as e:
+            err_msg = e.reason
+            try:
+                err_body = json.loads(e.read().decode("utf-8"))
+                err_msg = err_body.get("message", e.reason)
+                if "errors" in err_body and isinstance(err_body["errors"], list):
+                    err_msg += ": " + "; ".join(err.get("message", "") for err in err_body["errors"])
+            except Exception:
+                pass
             return None, f"HTTP {e.code}: {err_msg}"
         except Exception as e:
             return None, str(e)

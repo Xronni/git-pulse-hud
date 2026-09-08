@@ -80,6 +80,109 @@ class GitEngine:
                 return m.group("owner"), m.group("repo")
         return None, None
 
+    def init_repo(self, path=None):
+        """Initializes a new Git repository with default branch 'main'."""
+        target = path or self.repo_path
+        if not target or not os.path.exists(target):
+            return False, "Directory does not exist"
+        try:
+            res = subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=target,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            if res.returncode == 0:
+                self.set_repo(target)
+                return True, "Repository initialized"
+            # Fallback for older git versions without -b flag
+            res = subprocess.run(
+                ["git", "init"],
+                cwd=target,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            if res.returncode == 0:
+                self.set_repo(target)
+                return True, "Repository initialized"
+            return False, res.stderr.strip()
+        except Exception as e:
+            return False, str(e)
+
+    def has_remote(self, remote_name="origin"):
+        """Returns True if the specified remote is configured."""
+        if not self.is_valid():
+            return False
+        out = self._run(["remote"])
+        return remote_name in [r.strip() for r in out.splitlines()]
+
+    def add_remote(self, name, url):
+        """Adds a remote repository URL."""
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        try:
+            res = subprocess.run(
+                ["git", "remote", "add", name, url],
+                cwd=self.root_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            if res.returncode == 0:
+                return True, "Remote added"
+            return False, res.stderr.strip()
+        except Exception as e:
+            return False, str(e)
+
+    def set_remote_url(self, name, url):
+        """Updates a remote repository URL."""
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        try:
+            res = subprocess.run(
+                ["git", "remote", "set-url", name, url],
+                cwd=self.root_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            return res.returncode == 0, res.stderr.strip()
+        except Exception as e:
+            return False, str(e)
+
+    def has_commits(self):
+        """Returns True if HEAD points to a valid commit."""
+        if not self.is_valid():
+            return False
+        commit = self._run(["rev-parse", "--verify", "HEAD"])
+        return bool(commit and not commit.startswith("fatal"))
+
+    def push_initial(self, remote="origin", branch=None):
+        """Pushes current branch to remote setting upstream tracking."""
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        cur_branch = branch or self.get_current_branch()
+        if not cur_branch or "HEAD" in cur_branch or cur_branch == "no commits":
+            cur_branch = "main"
+        try:
+            res = subprocess.run(
+                ["git", "push", "-u", remote, f"HEAD:{cur_branch}"],
+                cwd=self.root_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            return res.returncode == 0, res.stdout.strip() or res.stderr.strip()
+        except Exception as e:
+            return False, str(e)
+
     def get_current_branch(self):
         branch = self._run(["branch", "--show-current"]).strip()
         if not branch:

@@ -161,7 +161,30 @@ TRANSLATIONS = {
         "no_repo_title": "No Repository Selected",
         "no_repo_desc": "Open a local Git repository to start staging changes, inspecting commits, and viewing analytics.",
         "welcome_title": "Welcome to GitPulse HUD",
-        "welcome_desc": "Please select a Git repository on your system to begin."
+        "welcome_desc": "Please select a Git repository on your system to begin.",
+        "btn_init_repo": "Initialize Git in this Folder",
+        "init_repo_success": "Git repository initialized successfully!",
+        
+        # Publish to GitHub
+        "publish_card_title": "Repository Not Published to GitHub",
+        "publish_card_desc": "This project only exists on your computer. Publish it to your GitHub account with a single click!",
+        "publish_btn": "Publish to GitHub...",
+        "publish_dialog_title": "Publish Repository to GitHub",
+        "publish_dialog_sub": "Create remote repository and push your project",
+        "publish_repo_name": "Repository Name",
+        "publish_repo_desc": "Description (optional)",
+        "publish_visibility": "Visibility",
+        "publish_public": "Public (anyone can see)",
+        "publish_private": "Private (only you can see)",
+        "publish_account": "GitHub Account",
+        "publish_account_connected": "Connected as",
+        "publish_account_not_connected": "GitHub token not configured",
+        "publish_action": "Publish Project",
+        "publishing": "Publishing to GitHub...",
+        "publish_success_title": "Project Published Successfully! 🎉",
+        "publish_success_desc": "Your repository is now live on GitHub with upstream tracking configured.",
+        "open_on_github": "Open on GitHub",
+        "publish_initial_commit_note": "No commits found. An initial commit ('feat: initial commit') with all files will be automatically created."
     },
     "ru": {
         "app_title": "GitPulse",
@@ -318,7 +341,30 @@ TRANSLATIONS = {
         "no_repo_title": "Репозиторий не выбран",
         "no_repo_desc": "Выберите локальный Git-репозиторий для подготовки коммитов, просмотра истории и аналитики.",
         "welcome_title": "Добро пожаловать в GitPulse HUD",
-        "welcome_desc": "Пожалуйста, выберите Git-репозиторий для начала работы."
+        "welcome_desc": "Пожалуйста, выберите Git-репозиторий для начала работы.",
+        "btn_init_repo": "Инициализировать Git в этой папке",
+        "init_repo_success": "Git-репозиторий успешно инициализирован!",
+        
+        # Publish to GitHub
+        "publish_card_title": "Репозиторий ещё не опубликован на GitHub",
+        "publish_card_desc": "Этот проект существует только на вашем компьютере. Опубликуйте его на GitHub в один клик!",
+        "publish_btn": "Опубликовать на GitHub...",
+        "publish_dialog_title": "Публикация репозитория на GitHub",
+        "publish_dialog_sub": "Создание удаленного репозитория и отправка проекта",
+        "publish_repo_name": "Имя репозитория",
+        "publish_repo_desc": "Описание (необязательно)",
+        "publish_visibility": "Видимость",
+        "publish_public": "Открытый (Public — доступен всем)",
+        "publish_private": "Приватный (Private — только для вас)",
+        "publish_account": "Аккаунт GitHub",
+        "publish_account_connected": "Подключен как",
+        "publish_account_not_connected": "GitHub токен не настроен",
+        "publish_action": "Опубликовать проект",
+        "publishing": "Публикация на GitHub...",
+        "publish_success_title": "Проект успешно опубликован! 🎉",
+        "publish_success_desc": "Ваш репозиторий опубликован на GitHub, удаленная ветка и отслеживание настроены.",
+        "open_on_github": "Открыть на GitHub",
+        "publish_initial_commit_note": "В репозитории ещё нет коммитов. Будет создан начальный коммит ('feat: initial commit') со всеми файлами."
     }
 }
 
