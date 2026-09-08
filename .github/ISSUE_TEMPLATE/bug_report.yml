@@ -1,0 +1,69 @@
+name: 🐛 Bug Report
+description: Report a bug or unintended behavior in GitPulse HUD
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us investigate.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the issue...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Open repository with ...
+        2. Click on ...
+        3. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear description of what you expected to happen.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System / Linux Distribution
+      options:
+        - Ubuntu 24.04 / 22.04 LTS
+        - Debian 12 (Bookworm)
+        - Arch Linux / Manjaro
+        - Fedora 40 / 39
+        - Other Linux
+    validations:
+      required: true
+  - type: input
+    id: desktop_env
+    attributes:
+      label: Desktop Environment / Window Manager
+      placeholder: GNOME 46 (Wayland) / KDE Plasma 6 (X11) / Hyprland
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: GitPulse HUD Version
+      placeholder: e.g. v1.1.0 or latest main
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Terminal Output / Error Logs
+      description: Paste any terminal logs or stacktraces.
+      render: shell
+    validations:
+      required: false
