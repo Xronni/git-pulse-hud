@@ -237,6 +237,15 @@ def test_git_engine():
         report("Commit Graph Lane Allocation", len(graph) >= 3 and "col" in graph[0],
                f"Retrieved {len(graph)} commits with lane columns")
 
+        ahead_local, behind_local = ge.get_ahead_behind()
+        report("Unpushed Commits Ahead/Behind Detection", ahead_local > 0 and behind_local == 0,
+               f"Detected {ahead_local} local commits ahead of remote")
+
+        ge.add_remote("origin", "https://github.com/example/test-repo.git")
+        ahead_remote, behind_remote = ge.get_ahead_behind()
+        report("Unpushed Remote Branch Detection", ahead_remote > 0 and behind_remote == 0,
+               f"Correctly determined unpushed branch with ahead={ahead_remote}")
+
 
 def test_secret_scanner():
     section("5. Pre-Commit Secret Scanner")

@@ -971,6 +971,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         if ahead > 0 and is_published:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
             self.btn_push_only.set_visible(True)
+        elif ahead > 0 and not is_published:
+            self.btn_push_only.set_label(f"☁️ {t('publish_btn')}")
+            self.btn_push_only.set_visible(True)
         else:
             self.btn_push_only.set_visible(False)
         self.lbl_composer_hdr.set_text(t("commit_builder"))
@@ -978,7 +981,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
         self.entry_desc.set_placeholder_text(t("commit_desc_placeholder"))
         self.btn_commit.set_label(t("btn_commit"))
-        self.btn_commit_push.set_label(t("btn_commit_push"))
+        if is_published:
+            self.btn_commit_push.set_label(f"🚀 {t('btn_commit_push')}")
+        else:
+            self.btn_commit_push.set_label(f"☁️ {t('btn_commit_publish')}")
 
         # View 2
         self.lbl_view2_title.set_text(t("tab_history"))
@@ -1103,6 +1109,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         if ahead > 0 and has_remote:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
             self.btn_push_only.set_visible(True)
+        elif ahead > 0 and not has_remote:
+            self.btn_push_only.set_label(f"☁️ {t('publish_btn')}")
+            self.btn_push_only.set_visible(True)
         else:
             self.btn_push_only.set_visible(False)
 
@@ -1113,8 +1122,15 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         while child := self.files_container.get_first_child():
             self.files_container.remove(child)
 
-        # Show Publish to GitHub banner if repo has no origin remote
-        if not self.git.has_remote("origin"):
+        status = self.git.get_status_files()
+        staged = status.get("staged", [])
+        unstaged = status.get("unstaged", [])
+        untracked = status.get("untracked", [])
+
+        has_files = bool(staged or unstaged or untracked)
+
+        # Show Publish to GitHub banner if repo has no origin remote AND there are files to commit
+        if not self.git.has_remote("origin") and has_files:
             publish_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
             publish_card.add_css_class("token-banner-card")
 
@@ -1132,27 +1148,27 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
             btn_publish_card = Gtk.Button(label=t("publish_btn"))
             btn_publish_card.add_css_class("primary-btn")
-            btn_publish_card.connect("clicked", self._on_publish_dialog)
+            btn_publish_card.connect("clicked", lambda b: self._on_publish_dialog())
             publish_card.append(btn_publish_card)
 
             self.files_container.append(publish_card)
-
-        status = self.git.get_status_files()
-        staged = status.get("staged", [])
-        unstaged = status.get("unstaged", [])
-        untracked = status.get("untracked", [])
 
         self._run_secret_scan()
 
         if not staged and not unstaged and not untracked:
             self.commit_card.set_visible(False)
-            self._render_empty_changes(t("clean_tree"), t("clean_tree_sub"))
+            self._render_empty_changes()
             return
 
         self.commit_card.set_visible(True)
         can_commit = len(staged) > 0
+        has_origin = self.git.has_remote("origin")
         self.btn_commit.set_sensitive(can_commit)
-        self.btn_commit_push.set_sensitive(can_commit and self.git.has_remote("origin"))
+        self.btn_commit_push.set_sensitive(can_commit)
+        if has_origin:
+            self.btn_commit_push.set_label(f"🚀 {t('btn_commit_push')}")
+        else:
+            self.btn_commit_push.set_label(f"☁️ {t('btn_commit_publish')}")
 
         if staged:
             hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -1232,29 +1248,96 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         self.files_container.append(box)
 
-    def _render_empty_changes(self, title, subtitle):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    def _render_empty_changes(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         box.set_margin_top(40)
         box.set_margin_bottom(40)
         box.set_halign(Gtk.Align.CENTER)
 
-        icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
-        icon.set_pixel_size(44)
-        box.append(icon)
+        has_remote = self.git.is_valid() and self.git.has_remote("origin")
+        has_commits = self.git.is_valid() and self.git.has_commits()
+        ahead, behind = self.git.get_ahead_behind() if self.git.is_valid() else (0, 0)
 
-        t_lbl = Gtk.Label(label=title, css_classes=["view-title"])
-        box.append(t_lbl)
+        if not has_remote:
+            if has_commits:
+                icon = Gtk.Image.new_from_icon_name("send-to-symbolic")
+                icon.set_pixel_size(48)
+                box.append(icon)
 
-        s_lbl = Gtk.Label(label=subtitle, css_classes=["view-subtitle"])
-        box.append(s_lbl)
+                t_lbl = Gtk.Label(label=t("local_commit_ready"), css_classes=["view-title"])
+                box.append(t_lbl)
 
-        ahead, behind = self.git.get_ahead_behind()
-        if ahead > 0:
+                s_lbl = Gtk.Label(label=t("local_commit_sub"), css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
+                s_lbl.set_max_width_chars(50)
+                box.append(s_lbl)
+
+                btn_pub = Gtk.Button(label=f"☁️ {t('publish_btn')}")
+                btn_pub.add_css_class("primary-btn")
+                btn_pub.set_margin_top(12)
+                btn_pub.connect("clicked", lambda b: self._on_publish_dialog())
+                box.append(btn_pub)
+            else:
+                icon = Gtk.Image.new_from_icon_name("folder-symbolic")
+                icon.set_pixel_size(48)
+                box.append(icon)
+
+                t_lbl = Gtk.Label(label=t("clean_tree"), css_classes=["view-title"])
+                box.append(t_lbl)
+
+                s_lbl = Gtk.Label(label=t("empty_repo_sub"), css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
+                s_lbl.set_max_width_chars(50)
+                box.append(s_lbl)
+
+                btn_pub = Gtk.Button(label=f"☁️ {t('publish_btn')}")
+                btn_pub.add_css_class("primary-btn")
+                btn_pub.set_margin_top(12)
+                btn_pub.connect("clicked", lambda b: self._on_publish_dialog())
+                box.append(btn_pub)
+        elif ahead > 0:
+            icon = Gtk.Image.new_from_icon_name("software-update-available-symbolic")
+            icon.set_pixel_size(48)
+            box.append(icon)
+
+            t_lbl = Gtk.Label(label=t("unpushed_title"), css_classes=["view-title"])
+            box.append(t_lbl)
+
+            s_lbl = Gtk.Label(label=f"{t('unpushed_sub')} ({ahead})", css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
+            s_lbl.set_max_width_chars(50)
+            box.append(s_lbl)
+
             btn_sync = Gtk.Button(label=f"🚀 {t('btn_push_ahead')} ({ahead})")
             btn_sync.add_css_class("primary-btn")
             btn_sync.set_margin_top(12)
             btn_sync.connect("clicked", lambda b: self._do_push())
             box.append(btn_sync)
+        elif behind > 0:
+            icon = Gtk.Image.new_from_icon_name("software-update-available-symbolic")
+            icon.set_pixel_size(48)
+            box.append(icon)
+
+            t_lbl = Gtk.Label(label=t("behind_title"), css_classes=["view-title"])
+            box.append(t_lbl)
+
+            s_lbl = Gtk.Label(label=f"{t('behind_sub')} ({behind})", css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
+            s_lbl.set_max_width_chars(50)
+            box.append(s_lbl)
+
+            btn_pull = Gtk.Button(label=f"↓ {t('btn_pull')} ({behind})")
+            btn_pull.add_css_class("primary-btn")
+            btn_pull.set_margin_top(12)
+            btn_pull.connect("clicked", lambda b: self._do_pull())
+            box.append(btn_pull)
+        else:
+            icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
+            icon.set_pixel_size(48)
+            box.append(icon)
+
+            t_lbl = Gtk.Label(label=t("clean_tree"), css_classes=["view-title"])
+            box.append(t_lbl)
+
+            s_lbl = Gtk.Label(label=t("clean_tree_sub"), css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
+            s_lbl.set_max_width_chars(50)
+            box.append(s_lbl)
 
         self.files_container.append(box)
 
@@ -1362,16 +1445,29 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.entry_desc.set_text("")
             self._load_repo_data()
             if push:
-                self._do_push()
+                if not self.git.has_remote("origin"):
+                    self._on_publish_dialog()
+                else:
+                    self._do_push()
         else:
             self.sound.play("error")
             err_msg = out.strip() if out else "Nothing to commit or commit failed."
             self._show_error_dialog(t("commit_failed"), err_msg)
 
     def _do_push(self):
+        if not self.git.is_valid():
+            return
+        if not self.git.has_remote("origin"):
+            self._on_publish_dialog()
+            return
+
+        self.btn_push_only.set_sensitive(False)
+        tok = self.telemetry.token
+
         def _bg():
-            ok, out = self.git.push()
+            ok, out = self.git.push(token=tok)
             def _done():
+                self.btn_push_only.set_sensitive(True)
                 if ok:
                     self.sound.play("push")
                     self._load_repo_data()
@@ -1379,6 +1475,23 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     self.sound.play("error")
                     err_msg = out.strip() if out else "Unknown error during push."
                     self._show_error_dialog(t("push_failed"), err_msg)
+            GLib.idle_add(_done)
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _do_pull(self):
+        if not self.git.is_valid() or not self.git.has_remote("origin"):
+            return
+
+        def _bg():
+            ok, out = self.git.pull()
+            def _done():
+                if ok:
+                    self.sound.play("pop")
+                    self._load_repo_data()
+                else:
+                    self.sound.play("error")
+                    err_msg = out.strip() if out else "Unknown error during pull."
+                    self._show_error_dialog(t("pull_failed"), err_msg)
             GLib.idle_add(_done)
         threading.Thread(target=_bg, daemon=True).start()
 
@@ -1464,7 +1577,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.sound.play("error")
             self._show_error_dialog(t("btn_init_repo"), msg)
 
-    def _on_publish_dialog(self, btn):
+    def _on_publish_dialog(self, btn=None):
         self.sound.play("click")
         from publish_dialog import PublishToGitHubDialog
         dlg = PublishToGitHubDialog(

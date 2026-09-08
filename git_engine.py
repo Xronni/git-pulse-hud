@@ -221,23 +221,56 @@ class GitEngine:
         commit = self._run(["rev-parse", "--verify", "HEAD"])
         return bool(commit and not commit.startswith("fatal"))
 
-    def push_initial(self, remote="origin", branch=None):
+    def push_initial(self, remote="origin", branch=None, token=None):
         """Pushes current branch to remote setting upstream tracking."""
         if not self.is_valid():
             return False, "Not a valid repository"
         cur_branch = branch or self.get_current_branch()
         if not cur_branch or "HEAD" in cur_branch or cur_branch == "no commits":
             cur_branch = "main"
+
+        origin_url = self._run(["remote", "get-url", remote]).strip()
+        remote_target = remote
+        if token and (origin_url.startswith("https://") or not origin_url):
+            owner, repo = self.get_github_repo_info()
+            if owner and repo:
+                remote_target = f"https://{token}@github.com/{owner}/{repo}.git"
+            elif origin_url.startswith("https://") and "@" not in origin_url:
+                remote_target = origin_url.replace("https://", f"https://{token}@")
+
         try:
             res = subprocess.run(
-                ["git", "push", "-u", remote, f"HEAD:{cur_branch}"],
+                ["git", "-c", "core.quotepath=false", "push", "-u", remote_target, f"{cur_branch}:{cur_branch}"],
                 cwd=self.root_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False
             )
-            return res.returncode == 0, res.stdout.strip() or res.stderr.strip()
+            if res.returncode != 0:
+                res = subprocess.run(
+                    ["git", "-c", "core.quotepath=false", "push", remote_target, cur_branch],
+                    cwd=self.root_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+
+            if res.returncode == 0:
+                subprocess.run(
+                    ["git", "branch", f"--set-upstream-to={remote}/{cur_branch}", cur_branch],
+                    cwd=self.root_path,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+                clean_url = self._run(["remote", "get-url", remote]).strip()
+                if "@" in clean_url and clean_url.startswith("https://"):
+                    clean_url = re.sub(r"https://[^@]+@", "https://", clean_url)
+                    self.set_remote_url(remote, clean_url)
+                return True, res.stdout.strip()
+            return False, res.stderr.strip() or res.stdout.strip()
         except Exception as e:
             return False, str(e)
 
@@ -251,20 +284,46 @@ class GitEngine:
 
     def get_ahead_behind(self):
         branch = self.get_current_branch()
-        if not branch or "HEAD" in branch:
+        if not branch or "HEAD" in branch or branch == "no commits":
             return 0, 0
+
+        # 1. Try standard upstream tracking
         upstream = self._run(["rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"]).strip()
-        if not upstream:
-            return 0, 0
-        counts = self._run(["rev-list", "--left-right", "--count", f"{upstream}...{branch}"])
-        if counts:
-            parts = counts.split()
-            if len(parts) == 2:
-                try:
-                    behind, ahead = int(parts[0]), int(parts[1])
-                    return ahead, behind
-                except ValueError:
-                    pass
+        if upstream and not upstream.startswith("fatal") and upstream != f"{branch}@{{upstream}}":
+            counts = self._run(["rev-list", "--left-right", "--count", f"{upstream}...{branch}"])
+            if counts:
+                parts = counts.split()
+                if len(parts) == 2:
+                    try:
+                        behind, ahead = int(parts[0]), int(parts[1])
+                        return ahead, behind
+                    except ValueError:
+                        pass
+
+        # 2. If no upstream tracking, check if remote origin exists
+        if self.has_remote("origin"):
+            has_remote_branch = bool(self._run(["rev-parse", "--verify", f"origin/{branch}"]).strip())
+            if has_remote_branch:
+                counts = self._run(["rev-list", "--left-right", "--count", f"origin/{branch}...{branch}"])
+                if counts:
+                    parts = counts.split()
+                    if len(parts) == 2:
+                        try:
+                            behind, ahead = int(parts[0]), int(parts[1])
+                            return ahead, behind
+                        except ValueError:
+                            pass
+            else:
+                # Branch not on remote yet: all local commits are ahead
+                total = self._run(["rev-list", "--count", branch]).strip()
+                if total.isdigit() and int(total) > 0:
+                    return int(total), 0
+
+        # 3. If no remote exists at all (purely local repository)
+        total = self._run(["rev-list", "--count", branch]).strip()
+        if total.isdigit() and int(total) > 0:
+            return int(total), 0
+
         return 0, 0
 
     def get_status_files(self):
@@ -382,11 +441,54 @@ class GitEngine:
         res = subprocess.run(["git", "commit", "-m", message], cwd=self.root_path, capture_output=True, text=True, check=False)
         return res.returncode == 0, res.stdout or res.stderr
 
-    def push(self):
+    def push(self, token=None):
+        if not self.is_valid():
+            return False, "Not a valid repository"
         branch = self.get_current_branch()
-        res = subprocess.run(["git", "push", "-u", "origin", branch], cwd=self.root_path, capture_output=True, text=True, check=False)
+        if not branch or "HEAD" in branch or branch == "no commits":
+            branch = "main"
+
+        if not self.has_remote("origin"):
+            return False, "No remote 'origin' configured"
+
+        origin_url = self._run(["remote", "get-url", "origin"]).strip()
+        remote_target = "origin"
+        if token and (origin_url.startswith("https://") or not origin_url):
+            owner, repo = self.get_github_repo_info()
+            if owner and repo:
+                remote_target = f"https://{token}@github.com/{owner}/{repo}.git"
+            elif origin_url.startswith("https://") and "@" not in origin_url:
+                remote_target = origin_url.replace("https://", f"https://{token}@")
+
+        res = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "push", "-u", remote_target, f"{branch}:{branch}"],
+            cwd=self.root_path,
+            capture_output=True,
+            text=True,
+            check=False
+        )
         if res.returncode != 0:
-            res = subprocess.run(["git", "push"], cwd=self.root_path, capture_output=True, text=True, check=False)
+            res = subprocess.run(
+                ["git", "-c", "core.quotepath=false", "push", remote_target, branch],
+                cwd=self.root_path,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+        if res.returncode == 0:
+            subprocess.run(
+                ["git", "branch", f"--set-upstream-to=origin/{branch}", branch],
+                cwd=self.root_path,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            clean_url = self._run(["remote", "get-url", "origin"]).strip()
+            if "@" in clean_url and clean_url.startswith("https://"):
+                clean_url = re.sub(r"https://[^@]+@", "https://", clean_url)
+                self.set_remote_url("origin", clean_url)
+
         return res.returncode == 0, res.stdout or res.stderr
 
     def pull(self):

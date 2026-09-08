@@ -39,6 +39,16 @@ TRANSLATIONS = {
         "breaking_change": "Breaking Changes (!)",
         "btn_commit": "Commit Changes",
         "btn_commit_push": "Commit & Push",
+        "btn_commit_publish": "Commit & Publish",
+        "local_commit_ready": "Commits Saved Locally",
+        "local_commit_sub": "All changes are committed in Git. Publish your project to GitHub to sync it to the cloud.",
+        "empty_repo_sub": "Create files or publish your project directly to GitHub.",
+        "unpushed_title": "Unpushed Commits Ready",
+        "unpushed_sub": "You have commits waiting to be pushed to GitHub.",
+        "behind_title": "Updates Available on Remote",
+        "behind_sub": "Remote repository has new commits that can be pulled.",
+        "btn_pull": "Pull Changes",
+        "pull_failed": "Pull Failed",
         
         # Metrics & Pulse
         "velocity_title": "Commit Velocity (14 Days)",
@@ -220,6 +230,16 @@ TRANSLATIONS = {
         "breaking_change": "Критические изменения (!)",
         "btn_commit": "Создать коммит",
         "btn_commit_push": "Коммит и отправка",
+        "btn_commit_publish": "Коммит и публикация",
+        "local_commit_ready": "Коммит сохранен локально",
+        "local_commit_sub": "Все изменения зафиксированы в Git. Опубликуйте репозиторий на GitHub, чтобы сохранить проект в сети.",
+        "empty_repo_sub": "Создайте файлы или опубликуйте репозиторий на GitHub.",
+        "unpushed_title": "Есть неотправленные коммиты",
+        "unpushed_sub": "У вас есть коммиты, ожидающие отправки в удалённый репозиторий GitHub.",
+        "behind_title": "Есть обновления на сервере",
+        "behind_sub": "В удалённом репозитории есть коммиты, доступные для получения.",
+        "btn_pull": "Получить изменения",
+        "pull_failed": "Ошибка получения изменений",
         
         # Metrics & Pulse
         "velocity_title": "Динамика коммитов (14 дней)",

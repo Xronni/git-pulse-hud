@@ -285,26 +285,9 @@ class PublishToGitHubDialog(Gtk.Window):
 
         # 4. Push initial branch using authenticated URL
         tok = self.telemetry.token
-        push_url = f"https://{tok}@github.com/{owner_login}/{name}.git" if tok else clone_url
-
-        try:
-            res = subprocess.run(
-                ["git", "-c", "core.quotepath=false", "push", "-u", push_url, f"{cur_branch}:{cur_branch}"],
-                cwd=self.git.root_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
-            # Revert remote URL back to clean HTTPS without embedded token
-            self.git.set_remote_url("origin", clone_url)
-
-            if res.returncode != 0:
-                GLib.idle_add(self._on_publish_failed, res.stderr.strip() or res.stdout.strip())
-                return
-        except Exception as e:
-            self.git.set_remote_url("origin", clone_url)
-            GLib.idle_add(self._on_publish_failed, str(e))
+        ok_push, msg_push = self.git.push_initial(remote="origin", branch=cur_branch, token=tok)
+        if not ok_push:
+            GLib.idle_add(self._on_publish_failed, msg_push)
             return
 
         # 5. Success
