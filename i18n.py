@@ -195,7 +195,19 @@ TRANSLATIONS = {
         "publish_success_title": "Project Published Successfully! 🎉",
         "publish_success_desc": "Your repository is now live on GitHub with upstream tracking configured.",
         "open_on_github": "Open on GitHub",
-        "publish_initial_commit_note": "No commits found. An initial commit ('feat: initial commit') with all files will be automatically created."
+        "publish_initial_commit_note": "No commits found. An initial commit ('feat: initial commit') with all files will be automatically created.",
+        "publish_init_section": "Initialize this repository with:",
+        "publish_init_sub": "Skip this step if you're importing an existing repository.",
+        "publish_add_readme": "Add a README file",
+        "publish_add_readme_desc": "This is where you can write a long description for your project.",
+        "publish_add_gitignore": "Add .gitignore",
+        "publish_add_gitignore_desc": "Choose which files not to track from a list of templates.",
+        "publish_gitignore_template": ".gitignore template:",
+        "publish_choose_license": "Choose a license",
+        "publish_choose_license_desc": "A license tells others what they can and can't do with your code.",
+        "publish_license": "License:",
+        "publish_file_exists": "(already exists in project)",
+        "publish_template_none": "None"
     },
     "ru": {
         "app_title": "GitPulse",
@@ -386,7 +398,19 @@ TRANSLATIONS = {
         "publish_success_title": "Проект успешно опубликован! 🎉",
         "publish_success_desc": "Ваш репозиторий опубликован на GitHub, удаленная ветка и отслеживание настроены.",
         "open_on_github": "Открыть на GitHub",
-        "publish_initial_commit_note": "В репозитории ещё нет коммитов. Будет создан начальный коммит ('feat: initial commit') со всеми файлами."
+        "publish_initial_commit_note": "В репозитории ещё нет коммитов. Будет создан начальный коммит ('feat: initial commit') со всеми файлами.",
+        "publish_init_section": "Инициализация репозитория:",
+        "publish_init_sub": "Пропустите этот шаг, если в проекте уже есть нужные файлы.",
+        "publish_add_readme": "Добавить файл README",
+        "publish_add_readme_desc": "Здесь вы можете описать назначение вашего проекта.",
+        "publish_add_gitignore": "Добавить .gitignore",
+        "publish_add_gitignore_desc": "Выберите шаблон файлов, которые не следует отслеживать.",
+        "publish_gitignore_template": "Шаблон .gitignore:",
+        "publish_choose_license": "Выбрать лицензию",
+        "publish_choose_license_desc": "Лицензия определяет правила использования вашего кода.",
+        "publish_license": "Лицензия:",
+        "publish_file_exists": "(уже есть в проекте)",
+        "publish_template_none": "Не выбрано"
     }
 }
 

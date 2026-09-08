@@ -562,3 +562,31 @@ revealer:focus-visible,
     font-family: 'JetBrainsMono Nerd Font', 'JetBrains Mono', 'Ubuntu Sans Mono', monospace;
 }
 
+/* Repository Scaffolding & Dropdowns in Publish Dialog */
+.init-option-row {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 12px 14px;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.init-option-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.10);
+}
+
+.dropdown-picker {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 4px 10px;
+    color: #f1f5f9;
+    font-size: 12px;
+}
+
+.dropdown-picker:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(56, 189, 248, 0.40);
+}
+

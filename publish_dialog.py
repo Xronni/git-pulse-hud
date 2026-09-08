@@ -14,6 +14,14 @@ import re
 import threading
 import subprocess
 from i18n import t
+from repo_templates import (
+    GITIGNORE_TEMPLATES,
+    LICENSE_TEMPLATES,
+    get_readme_template,
+    get_gitignore_template,
+    get_license_template,
+    detect_project_stack
+)
 
 
 class PublishToGitHubDialog(Gtk.Window):
@@ -27,7 +35,7 @@ class PublishToGitHubDialog(Gtk.Window):
         self.user_profile = None
 
         self.set_title(t("publish_dialog_title"))
-        self.set_default_size(560, 600)
+        self.set_default_size(580, 680)
         self.add_css_class("token-modal-window")
 
         # Libadwaita Titlebar
@@ -135,6 +143,134 @@ class PublishToGitHubDialog(Gtk.Window):
 
         self.main_box.append(form_card)
 
+        # 3. Repository Initialization Card (README, .gitignore, License)
+        init_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        init_card.add_css_class("hud-card")
+
+        init_hdr_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        lbl_init_title = Gtk.Label(label=t("publish_init_section"), css_classes=["hud-card-header"], xalign=0)
+        lbl_init_sub = Gtk.Label(label=t("publish_init_sub"), css_classes=["view-subtitle"], xalign=0, wrap=True)
+        init_hdr_box.append(lbl_init_title)
+        init_hdr_box.append(lbl_init_sub)
+        init_card.append(init_hdr_box)
+
+        # Check existing files in repository root
+        root_path = self.git.root_path or ""
+        readme_path = os.path.join(root_path, "README.md") if root_path else ""
+        has_readme = bool(root_path and (os.path.exists(readme_path) or os.path.exists(os.path.join(root_path, "README")) or os.path.exists(os.path.join(root_path, "readme.md"))))
+
+        gitignore_path = os.path.join(root_path, ".gitignore") if root_path else ""
+        has_gitignore = bool(root_path and os.path.exists(gitignore_path))
+
+        license_path = os.path.join(root_path, "LICENSE") if root_path else ""
+        has_license = bool(root_path and (os.path.exists(license_path) or os.path.exists(os.path.join(root_path, "LICENSE.txt")) or os.path.exists(os.path.join(root_path, "LICENSE.md"))))
+
+        detected_stack = detect_project_stack(root_path)
+
+        # --- A. README Option ---
+        readme_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        readme_row.add_css_class("init-option-row")
+        readme_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        readme_vbox.set_hexpand(True)
+
+        lbl_r_text = f"{t('publish_add_readme')} {t('publish_file_exists')}" if has_readme else t("publish_add_readme")
+        self.check_readme = Gtk.CheckButton(label=lbl_r_text)
+        self.check_readme.set_active(True)
+        if has_readme:
+            self.check_readme.set_sensitive(False)
+        readme_vbox.append(self.check_readme)
+
+        lbl_r_desc = Gtk.Label(label=t("publish_add_readme_desc"), css_classes=["view-subtitle"], xalign=0, wrap=True)
+        readme_vbox.append(lbl_r_desc)
+        readme_row.append(readme_vbox)
+        init_card.append(readme_row)
+
+        # --- B. .gitignore Option ---
+        gi_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        gi_row.add_css_class("init-option-row")
+        gi_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        gi_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        gi_vbox.set_hexpand(True)
+
+        lbl_gi_text = f"{t('publish_add_gitignore')} {t('publish_file_exists')}" if has_gitignore else t("publish_add_gitignore")
+        self.check_gitignore = Gtk.CheckButton(label=lbl_gi_text)
+        self.check_gitignore.set_active(has_gitignore or (detected_stack is not None))
+        if has_gitignore:
+            self.check_gitignore.set_sensitive(False)
+        gi_vbox.append(self.check_gitignore)
+
+        lbl_gi_desc = Gtk.Label(label=t("publish_add_gitignore_desc"), css_classes=["view-subtitle"], xalign=0, wrap=True)
+        gi_vbox.append(lbl_gi_desc)
+        gi_top.append(gi_vbox)
+        gi_row.append(gi_top)
+
+        # Dropdown for .gitignore templates
+        gi_dropdown_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        gi_dropdown_box.set_margin_start(24)
+        lbl_gi_tpl = Gtk.Label(label=t("publish_gitignore_template"), css_classes=["hud-card-header"], xalign=0)
+        gi_dropdown_box.append(lbl_gi_tpl)
+
+        self.gitignore_templates_list = [t("publish_template_none")] + list(GITIGNORE_TEMPLATES.keys())
+        self.dropdown_gitignore = Gtk.DropDown.new_from_strings(self.gitignore_templates_list)
+        self.dropdown_gitignore.add_css_class("dropdown-picker")
+        self.dropdown_gitignore.set_hexpand(True)
+
+        # Pre-select detected stack if available
+        if detected_stack and detected_stack in self.gitignore_templates_list:
+            self.dropdown_gitignore.set_selected(self.gitignore_templates_list.index(detected_stack))
+        else:
+            self.dropdown_gitignore.set_selected(0)
+
+        self.dropdown_gitignore.set_sensitive(not has_gitignore and self.check_gitignore.get_active())
+        self.check_gitignore.connect("toggled", lambda cb: self.dropdown_gitignore.set_sensitive(cb.get_active()))
+        gi_dropdown_box.append(self.dropdown_gitignore)
+        gi_row.append(gi_dropdown_box)
+        init_card.append(gi_row)
+
+        # --- C. License Option ---
+        lic_row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        lic_row.add_css_class("init-option-row")
+        lic_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        lic_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        lic_vbox.set_hexpand(True)
+
+        lbl_lic_text = f"{t('publish_choose_license')} {t('publish_file_exists')}" if has_license else t("publish_choose_license")
+        self.check_license = Gtk.CheckButton(label=lbl_lic_text)
+        self.check_license.set_active(has_license)
+        if has_license:
+            self.check_license.set_sensitive(False)
+        lic_vbox.append(self.check_license)
+
+        lbl_lic_desc = Gtk.Label(label=t("publish_choose_license_desc"), css_classes=["view-subtitle"], xalign=0, wrap=True)
+        lic_vbox.append(lbl_lic_desc)
+        lic_top.append(lic_vbox)
+        lic_row.append(lic_top)
+
+        # Dropdown for licenses
+        lic_dropdown_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        lic_dropdown_box.set_margin_start(24)
+        lbl_lic_tpl = Gtk.Label(label=t("publish_license"), css_classes=["hud-card-header"], xalign=0)
+        lic_dropdown_box.append(lbl_lic_tpl)
+
+        self.license_templates_list = [t("publish_template_none")] + list(LICENSE_TEMPLATES.keys())
+        self.dropdown_license = Gtk.DropDown.new_from_strings(self.license_templates_list)
+        self.dropdown_license.add_css_class("dropdown-picker")
+        self.dropdown_license.set_hexpand(True)
+
+        # Default to MIT License if not already present
+        if not has_license and "MIT License" in self.license_templates_list:
+            self.dropdown_license.set_selected(self.license_templates_list.index("MIT License"))
+        else:
+            self.dropdown_license.set_selected(0)
+
+        self.dropdown_license.set_sensitive(not has_license and self.check_license.get_active())
+        self.check_license.connect("toggled", lambda cb: self.dropdown_license.set_sensitive(cb.get_active()))
+        lic_dropdown_box.append(self.dropdown_license)
+        lic_row.append(lic_dropdown_box)
+        init_card.append(lic_row)
+
+        self.main_box.append(init_card)
+
         # Error label
         self.lbl_error = Gtk.Label(wrap=True, xalign=0, css_classes=["status-del"])
         self.lbl_error.set_visible(False)
@@ -210,6 +346,16 @@ class PublishToGitHubDialog(Gtk.Window):
         description = self.entry_desc.get_text().strip()
         is_private = self.radio_private.get_active()
 
+        create_readme = self.check_readme.get_active() and self.check_readme.get_sensitive()
+
+        create_gitignore = self.check_gitignore.get_active() and self.check_gitignore.get_sensitive()
+        gi_idx = self.dropdown_gitignore.get_selected()
+        gitignore_key = self.gitignore_templates_list[gi_idx] if (create_gitignore and gi_idx > 0) else None
+
+        create_license = self.check_license.get_active() and self.check_license.get_sensitive()
+        lic_idx = self.dropdown_license.get_selected()
+        license_key = self.license_templates_list[lic_idx] if (create_license and lic_idx > 0) else None
+
         self.btn_publish.set_sensitive(False)
         self.btn_publish.set_label(t("publishing"))
         self.lbl_error.set_visible(False)
@@ -217,23 +363,69 @@ class PublishToGitHubDialog(Gtk.Window):
 
         threading.Thread(
             target=self._publish_worker,
-            args=(repo_name, description, is_private),
+            args=(repo_name, description, is_private, create_readme, create_gitignore, gitignore_key, create_license, license_key),
             daemon=True
         ).start()
 
-    def _publish_worker(self, name, description, is_private):
+    def _publish_worker(self, name, description, is_private, create_readme, create_gitignore, gitignore_key, create_license, license_key):
         # 0. Ensure Git author identity so commits never fail on a clean OS
         author_name = "Developer"
         author_email = "developer@users.noreply.github.com"
+        login = "developer"
         if self.user_profile and isinstance(self.user_profile, dict):
-            author_name = self.user_profile.get("name") or self.user_profile.get("login") or author_name
             login = self.user_profile.get("login") or "developer"
+            author_name = self.user_profile.get("name") or login
             author_email = self.user_profile.get("email") or f"{login}@users.noreply.github.com"
         self.git.ensure_author_identity(name=author_name, email=author_email)
 
-        # 1. Handle uncommitted files / initial commit if repo has no commits
+        # 1. Generate selected initialization files if requested
+        root_path = self.git.root_path
+        files_created = []
+        if root_path and os.path.isdir(root_path):
+            if create_readme:
+                readme_path = os.path.join(root_path, "README.md")
+                if not os.path.exists(readme_path):
+                    try:
+                        content = get_readme_template(
+                            repo_name=name,
+                            description=description,
+                            author=login,
+                            license_name=license_key
+                        )
+                        with open(readme_path, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        files_created.append("README.md")
+                    except Exception as e:
+                        print(f"Error creating README.md: {e}")
+
+            if create_gitignore and gitignore_key:
+                gi_path = os.path.join(root_path, ".gitignore")
+                if not os.path.exists(gi_path):
+                    try:
+                        content = get_gitignore_template(gitignore_key)
+                        if content:
+                            with open(gi_path, "w", encoding="utf-8") as f:
+                                f.write(content)
+                            files_created.append(".gitignore")
+                    except Exception as e:
+                        print(f"Error creating .gitignore: {e}")
+
+            if create_license and license_key:
+                lic_path = os.path.join(root_path, "LICENSE")
+                if not os.path.exists(lic_path):
+                    try:
+                        content = get_license_template(license_key, author=author_name)
+                        if content:
+                            with open(lic_path, "w", encoding="utf-8") as f:
+                                f.write(content)
+                            files_created.append("LICENSE")
+                    except Exception as e:
+                        print(f"Error creating LICENSE: {e}")
+
+        # 2. Handle commit creation:
+        # Case A: Repository has no commits yet -> stage all and create initial commit
         if not self.git.has_commits():
-            # If folder is empty, create initial README.md
+            # If folder is empty, create fallback README.md
             status = self.git.get_status_files()
             has_any_files = bool(status.get("staged") or status.get("unstaged") or status.get("untracked"))
             readme_path = os.path.join(self.git.root_path, "README.md")
@@ -260,6 +452,11 @@ class PublishToGitHubDialog(Gtk.Window):
             if not self.git.has_commits():
                 GLib.idle_add(self._on_publish_failed, f"Could not create initial commit: {msg_commit}")
                 return
+        else:
+            # Case B: Repository already had commits, but we generated new initialization files
+            if files_created:
+                self.git.stage_all()
+                self.git.commit(f"chore: add {', '.join(files_created)}")
 
         # Ensure branch is named 'main'
         cur_branch = self.git.get_current_branch()
@@ -267,7 +464,7 @@ class PublishToGitHubDialog(Gtk.Window):
             subprocess.run(["git", "branch", "-M", "main"], cwd=self.git.root_path, check=False)
             cur_branch = "main"
 
-        # 2. Call GitHub API to create repository
+        # 3. Call GitHub API to create repository
         repo_data, err = self.telemetry.create_remote_repo(name, description, is_private)
         if err or not repo_data:
             GLib.idle_add(self._on_publish_failed, err or "Failed to create repository")
@@ -277,20 +474,20 @@ class PublishToGitHubDialog(Gtk.Window):
         clone_url = repo_data.get("clone_url")
         owner_login = repo_data.get("owner", {}).get("login", "")
 
-        # 3. Add or update remote origin
+        # 4. Add or update remote origin
         if self.git.has_remote("origin"):
             self.git.set_remote_url("origin", clone_url)
         else:
             self.git.add_remote("origin", clone_url)
 
-        # 4. Push initial branch using authenticated URL
+        # 5. Push initial branch using authenticated URL
         tok = self.telemetry.token
         ok_push, msg_push = self.git.push_initial(remote="origin", branch=cur_branch, token=tok)
         if not ok_push:
             GLib.idle_add(self._on_publish_failed, msg_push)
             return
 
-        # 5. Success
+        # 6. Success
         GLib.idle_add(self._on_publish_success, repo_data)
 
     def _on_publish_failed(self, error_msg):

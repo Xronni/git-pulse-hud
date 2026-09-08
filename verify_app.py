@@ -363,6 +363,41 @@ def test_charts_rendering():
         report("Cairo Charts Rendering", False, str(e))
 
 
+def test_repo_templates():
+    section("9. Repository Scaffolding & Templates")
+
+    from repo_templates import (
+        GITIGNORE_TEMPLATES,
+        LICENSE_TEMPLATES,
+        get_readme_template,
+        get_gitignore_template,
+        get_license_template,
+        detect_project_stack
+    )
+
+    # 1. License Templates
+    lic_count = len(LICENSE_TEMPLATES)
+    report("Standard License Templates Loaded", lic_count >= 9, f"Available licenses: {lic_count} (MIT, Apache-2.0, GPL, BSD, etc.)")
+
+    mit_text = get_license_template("MIT License", author="TestAuthor")
+    report("MIT License Generation", "TestAuthor" in mit_text and "MIT License" in mit_text, "Author and year interpolated properly")
+
+    # 2. .gitignore Templates
+    gi_count = len(GITIGNORE_TEMPLATES)
+    report("Language .gitignore Templates Loaded", gi_count >= 10, f"Available templates: {gi_count} (Python, Node, Rust, Go, etc.)")
+
+    py_gi = get_gitignore_template("Python")
+    report("Python .gitignore Content", "__pycache__/" in py_gi and ".venv" in py_gi, "Proper ignores for bytecode and virtual environments")
+
+    # 3. README Generation
+    readme = get_readme_template("my-cool-project", description="Awesome app", author="xronni", license_name="MIT License")
+    report("README Generator", "# my-cool-project" in readme and "Awesome app" in readme and "MIT License" in readme, "Interpolated repo name, description, and license block")
+
+    # 4. Project Stack Detection
+    detected = detect_project_stack(APP_DIR)
+    report("Project Stack Auto-Detection", detected == "Python", f"Correctly detected '{detected}' stack for GitPulse HUD")
+
+
 def main():
     print(f"\n{BOLD}══════════════════════════════════════════════════════════════════{RESET}")
     print(f"{BOLD}         ⚡ GitPulse HUD — Full Verification Suite{RESET}")
@@ -376,6 +411,7 @@ def main():
     test_sound_engine()
     test_dialogs_and_window_csd()
     test_charts_rendering()
+    test_repo_templates()
 
     total = passed_tests + failed_tests
     print(f"\n{BOLD}══════════════════════════════════════════════════════════════════{RESET}")
