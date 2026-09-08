@@ -13,10 +13,20 @@ from collections import defaultdict
 
 class GitEngine:
     def __init__(self, repo_path=None):
-        self.repo_path = repo_path or os.getcwd()
-        self.root_path = self.find_repo_root(self.repo_path)
+        home_abs = os.path.abspath(os.path.expanduser("~"))
+        if repo_path and os.path.exists(repo_path) and os.path.abspath(repo_path) not in [home_abs, "/", "/root"]:
+            self.repo_path = repo_path
+            self.root_path = self.find_repo_root(self.repo_path)
+        else:
+            self.repo_path = None
+            self.root_path = None
 
     def find_repo_root(self, path):
+        if not path or not os.path.exists(path):
+            return None
+        home_abs = os.path.abspath(os.path.expanduser("~"))
+        if os.path.abspath(path) in [home_abs, "/", "/root"]:
+            return None
         try:
             res = subprocess.run(
                 ["git", "rev-parse", "--show-toplevel"],
@@ -24,20 +34,36 @@ class GitEngine:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=5,
                 check=False
             )
             if res.returncode == 0:
-                return res.stdout.strip()
+                root = res.stdout.strip()
+                if os.path.abspath(root) in [home_abs, "/", "/root"]:
+                    return None
+                return root
         except Exception:
             pass
         return None
 
     def set_repo(self, path):
+        if not path or not os.path.exists(path):
+            self.repo_path = None
+            self.root_path = None
+            return False
+        home_abs = os.path.abspath(os.path.expanduser("~"))
+        if os.path.abspath(path) in [home_abs, "/", "/root"]:
+            self.repo_path = None
+            self.root_path = None
+            return False
         root = self.find_repo_root(path)
         if root:
             self.repo_path = root
             self.root_path = root
             return True
+        # Path is a valid directory, but not a git repo yet
+        self.repo_path = os.path.abspath(path)
+        self.root_path = None
         return False
 
     def is_valid(self):
@@ -53,6 +79,7 @@ class GitEngine:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=8,
                 check=check
             )
             return res.stdout.rstrip("\r\n")
@@ -84,18 +111,23 @@ class GitEngine:
         """Initializes a new Git repository with default branch 'main'."""
         target = path or self.repo_path
         if not target or not os.path.exists(target):
-            return False, "Directory does not exist"
+            return False, "Directory does not exist or not specified"
+        target_abs = os.path.abspath(target)
+        home_abs = os.path.abspath(os.path.expanduser("~"))
+        if target_abs in [home_abs, "/", "/root", "/home"]:
+            return False, "Cannot initialize Git directly in home or root directory"
         try:
             res = subprocess.run(
                 ["git", "init", "-b", "main"],
-                cwd=target,
+                cwd=target_abs,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=10,
                 check=False
             )
             if res.returncode == 0:
-                self.set_repo(target)
+                self.set_repo(target_abs)
                 return True, "Repository initialized"
             # Fallback for older git versions without -b flag
             res = subprocess.run(

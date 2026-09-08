@@ -67,10 +67,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.sound = SoundEngine(enabled=self.config.get("sound_enabled", True))
         
         initial_repo = self.config.get("last_repo", "")
-        if initial_repo and os.path.exists(initial_repo):
+        home_abs = os.path.abspath(os.path.expanduser("~"))
+        if initial_repo and os.path.exists(initial_repo) and os.path.abspath(initial_repo) not in [home_abs, "/", "/root"]:
             self.git = GitEngine(initial_repo)
         else:
-            self.git = GitEngine("")
+            self.git = GitEngine(None)
+            self.config["last_repo"] = ""
 
         self.telemetry = GitHubTelemetry(token=self.config.get("github_token", ""))
         self.active_view = "changes"
@@ -78,9 +80,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.last_scan_findings = []
 
         self.config.setdefault("recent_repos", [])
-        if initial_repo and os.path.exists(initial_repo):
-            if initial_repo not in self.config["recent_repos"]:
-                self.config["recent_repos"].insert(0, initial_repo)
+        self.config["recent_repos"] = [
+            r for r in self.config["recent_repos"]
+            if r and os.path.exists(r) and os.path.abspath(r) not in [home_abs, "/", "/root"]
+        ]
+        if self.git.is_valid() and self.git.root_path not in self.config["recent_repos"]:
+            self.config["recent_repos"].insert(0, self.git.root_path)
 
         # Global key controller (Ctrl+K for Quick Switcher)
         key_ctl = Gtk.EventControllerKey()
@@ -1400,6 +1405,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             folder = dialog.select_folder_finish(result)
             if folder:
                 path = folder.get_path()
+                home_abs = os.path.abspath(os.path.expanduser("~"))
+                if not path or os.path.abspath(path) in [home_abs, "/", "/root"]:
+                    self.sound.play("error")
+                    self._show_error_dialog(t("btn_open_repo"), "Cannot open system root or home directory as a repository.")
+                    return
+
                 if self.git.set_repo(path):
                     self.sound.play("click")
                     self.config["last_repo"] = path
@@ -1417,8 +1428,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     elif self.active_view == "telemetry":
                         self._refresh_telemetry_view()
                 else:
-                    self.sound.play("error")
-                    self.git.repo_path = path
+                    self.sound.play("pop")
+                    self.git.repo_path = os.path.abspath(path)
                     self.git.root_path = None
                     self._load_repo_data()
         except Exception as e:
@@ -1426,7 +1437,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _on_init_repo_clicked(self, btn):
         self.sound.play("click")
-        target_path = self.git.repo_path or os.getcwd()
+        target_path = self.git.repo_path
+        home_abs = os.path.abspath(os.path.expanduser("~"))
+        if not target_path or not os.path.exists(target_path) or os.path.abspath(target_path) in [home_abs, "/", "/root"]:
+            self._on_choose_repo(None)
+            return
+
         ok, msg = self.git.init_repo(target_path)
         if ok:
             self.sound.play("commit")
