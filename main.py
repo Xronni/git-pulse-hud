@@ -329,7 +329,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         self.btn_token_cfg = Gtk.Button()
         self.btn_token_cfg.set_icon_name("dialog-password-symbolic")
-        self.btn_token_cfg.set_tooltip_text(t("token_settings"))
+        self.btn_token_cfg.set_tooltip_text(t("token_guide_title"))
         self.btn_token_cfg.add_css_class("footer-btn")
         self.btn_token_cfg.set_hexpand(True)
         self.btn_token_cfg.connect("clicked", self._on_token_dialog)
@@ -389,17 +389,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         spacer.set_hexpand(True)
         top_row.append(spacer)
 
-        self.btn_stash = Gtk.Button(label=t("stash_save"))
-        self.btn_stash.add_css_class("subtle-btn")
-        self.btn_stash.connect("clicked", self._on_stash)
-        top_row.append(self.btn_stash)
-
-        self.btn_pop = Gtk.Button(label=t("stash_pop"))
-        self.btn_pop.add_css_class("subtle-btn")
-        self.btn_pop.connect("clicked", self._on_pop_stash)
-        top_row.append(self.btn_pop)
-
-        self.btn_stash_shelf = Gtk.Button(label=t("stashes"))
+        self.btn_stash_shelf = Gtk.Button(label=f"📦 {t('stashes')}")
         self.btn_stash_shelf.add_css_class("subtle-btn")
         self.btn_stash_shelf.connect("clicked", lambda b: self._on_open_stashes())
         top_row.append(self.btn_stash_shelf)
@@ -407,6 +397,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_push_only = Gtk.Button(label=f"↑ {t('btn_push')}")
         self.btn_push_only.add_css_class("primary-btn")
         self.btn_push_only.connect("clicked", lambda b: self._do_push())
+        self.btn_push_only.set_visible(False)
         top_row.append(self.btn_push_only)
 
         page.append(top_row)
@@ -958,16 +949,19 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             lbl.set_text(t(key))
         self.btn_sound.set_tooltip_text(t("sound_fx"))
         self.btn_lang.set_tooltip_text(t("lang_toggle_tooltip"))
-        self.btn_token_cfg.set_tooltip_text(t("token_settings"))
+        self.btn_token_cfg.set_tooltip_text(t("token_guide_title"))
         self.btn_refresh_ui.set_tooltip_text(t("btn_refresh"))
 
         # View 1
         self.lbl_view1_title.set_text(t("tab_changes"))
         self.lbl_changes_sub.set_text(t("sub_changes"))
-        self.btn_stash.set_label(t("stash_save"))
-        self.btn_pop.set_label(t("stash_pop"))
-        self.btn_stash_shelf.set_label(t("stashes"))
-        self.btn_push_only.set_label(f"↑ {t('btn_push')}")
+        self.btn_stash_shelf.set_label(f"📦 {t('stashes')}")
+        ahead, _ = self.git.get_ahead_behind() if self.git.is_valid() else (0, 0)
+        if ahead > 0:
+            self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
+            self.btn_push_only.set_visible(True)
+        else:
+            self.btn_push_only.set_visible(False)
         self.lbl_composer_hdr.set_text(t("commit_builder"))
         self.check_breaking.set_label(t("breaking_change"))
         self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
@@ -1088,6 +1082,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.sidebar_branch.set_text(self.git.get_current_branch())
         ahead, behind = self.git.get_ahead_behind()
         self.sidebar_ahead.set_text(f"↑{ahead} ↓{behind}")
+        if ahead > 0:
+            self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
+            self.btn_push_only.set_visible(True)
+        else:
+            self.btn_push_only.set_visible(False)
 
         self._refresh_changes_view()
         self._update_commit_preview()
@@ -1399,49 +1398,20 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _on_token_dialog(self, btn):
         self.sound.play("click")
-        dlg = Gtk.Window(transient_for=self, modal=True)
-        dlg.set_title(t("token_settings"))
-        dlg.set_default_size(520, 200)
-        dlg.add_css_class("token-modal-window")
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        box.set_margin_top(22)
-        box.set_margin_bottom(22)
-        box.set_margin_start(22)
-        box.set_margin_end(22)
-        dlg.set_child(box)
-
-        lbl = Gtk.Label(label=t("token_hint"), wrap=True, xalign=0, css_classes=["token-hint-label"])
-        box.append(lbl)
-
-        entry = Gtk.Entry()
-        entry.set_placeholder_text("ghp_xxxxxxxxxxxxxxxxxxxx")
-        entry.set_text(self.config.get("github_token", ""))
-        entry.add_css_class("token-entry")
-        box.append(entry)
-
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        btn_row.append(Gtk.Box(hexpand=True))
-
-        btn_cancel = Gtk.Button(label=t("cancel"), css_classes=["subtle-btn"])
-        btn_cancel.connect("clicked", lambda b: dlg.close())
-        btn_row.append(btn_cancel)
-
-        btn_save = Gtk.Button(label=t("save"), css_classes=["primary-btn"])
-        def _save():
-            tok = entry.get_text().strip()
-            self.config["github_token"] = tok
-            self.telemetry.set_token(tok)
-            self._save_config()
-            self.sound.play("commit")
-            dlg.close()
-            if self.active_view == "telemetry":
-                self._refresh_telemetry_view()
-        btn_save.connect("clicked", lambda b: _save())
-        btn_row.append(btn_save)
-
-        box.append(btn_row)
+        from token_dialog import GitTokenGuideDialog
+        dlg = GitTokenGuideDialog(
+            parent=self,
+            config=self.config,
+            telemetry_client=self.telemetry,
+            sound_engine=self.sound,
+            on_saved=self._on_token_saved
+        )
         dlg.present()
+
+    def _on_token_saved(self):
+        self._save_config()
+        if self.active_view == "telemetry":
+            self._refresh_telemetry_view()
 
 
 
@@ -1710,7 +1680,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
     def _show_error_dialog(self, title, msg):
         dlg = Gtk.Window(transient_for=self, modal=True)
         dlg.set_title(title)
-        dlg.set_default_size(440, 160)
+        dlg.set_default_size(460, 180)
         dlg.add_css_class("token-modal-window")
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
@@ -1723,10 +1693,23 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         lbl = Gtk.Label(label=f"{title}\n{msg}", wrap=True, xalign=0)
         box.append(lbl)
 
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_row.append(Gtk.Box(hexpand=True))
+
+        lower_msg = (msg or "").lower()
+        if any(w in lower_msg for w in ["auth", "token", "permission", "denied", "credential", "403", "401"]):
+            btn_token = Gtk.Button(label=f"🔑 {t('token_guide_title')}", css_classes=["subtle-btn"])
+            def _open_guide(b):
+                dlg.close()
+                self._on_token_dialog(None)
+            btn_token.connect("clicked", _open_guide)
+            btn_row.append(btn_token)
+
         btn = Gtk.Button(label="OK", css_classes=["primary-btn"])
-        btn.set_halign(Gtk.Align.END)
         btn.connect("clicked", lambda b: dlg.close())
-        box.append(btn)
+        btn_row.append(btn)
+
+        box.append(btn_row)
         dlg.present()
 
 

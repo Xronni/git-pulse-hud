@@ -30,6 +30,13 @@ class StashInspectorDialog(Gtk.Window):
             subtitle=t("stash_shelf_sub")
         )
         header.set_title_widget(title_widget)
+
+        # Quick save stash button in header
+        btn_quick_save = Gtk.Button(label=f"+ {t('stash_save')}")
+        btn_quick_save.add_css_class("suggested-action")
+        btn_quick_save.connect("clicked", self._on_quick_save_stash)
+        header.pack_start(btn_quick_save)
+
         self.set_titlebar(header)
 
         # Main horizontal split
@@ -216,6 +223,16 @@ class StashInspectorDialog(Gtk.Window):
         if self.selected_index is None:
             return
         ok, out = self.git.stash_drop(self.selected_index)
+        if ok:
+            self.sound.play("pop")
+            self._reload_stashes()
+            if self.on_changed:
+                self.on_changed()
+        else:
+            self.sound.play("error")
+
+    def _on_quick_save_stash(self, btn):
+        ok, out = self.git.stash_save()
         if ok:
             self.sound.play("pop")
             self._reload_stashes()
