@@ -107,6 +107,10 @@ class GitEngine:
                 return m.group("owner"), m.group("repo")
         return None, None
 
+    def get_github_repo_info(self):
+        """Alias for get_github_coords."""
+        return self.get_github_coords()
+
     def init_repo(self, path=None):
         """Initializes a new Git repository with default branch 'main'."""
         target = path or self.repo_path
@@ -230,17 +234,20 @@ class GitEngine:
             cur_branch = "main"
 
         origin_url = self._run(["remote", "get-url", remote]).strip()
-        remote_target = remote
+        auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_repo_info()
+            owner, repo = self.get_github_coords()
             if owner and repo:
-                remote_target = f"https://{token}@github.com/{owner}/{repo}.git"
+                auth_url = f"https://{token}@github.com/{owner}/{repo}.git"
             elif origin_url.startswith("https://") and "@" not in origin_url:
-                remote_target = origin_url.replace("https://", f"https://{token}@")
+                auth_url = origin_url.replace("https://", f"https://{token}@")
 
         try:
+            if auth_url:
+                self.set_remote_url(remote, auth_url)
+
             res = subprocess.run(
-                ["git", "-c", "core.quotepath=false", "push", "-u", remote_target, f"{cur_branch}:{cur_branch}"],
+                ["git", "-c", "core.quotepath=false", "push", "-u", remote, f"{cur_branch}:{cur_branch}"],
                 cwd=self.root_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -249,7 +256,7 @@ class GitEngine:
             )
             if res.returncode != 0:
                 res = subprocess.run(
-                    ["git", "-c", "core.quotepath=false", "push", remote_target, cur_branch],
+                    ["git", "-c", "core.quotepath=false", "push", remote, cur_branch],
                     cwd=self.root_path,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -257,22 +264,13 @@ class GitEngine:
                     check=False
                 )
 
-            if res.returncode == 0:
-                subprocess.run(
-                    ["git", "branch", f"--set-upstream-to={remote}/{cur_branch}", cur_branch],
-                    cwd=self.root_path,
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-                clean_url = self._run(["remote", "get-url", remote]).strip()
-                if "@" in clean_url and clean_url.startswith("https://"):
-                    clean_url = re.sub(r"https://[^@]+@", "https://", clean_url)
-                    self.set_remote_url(remote, clean_url)
-                return True, res.stdout.strip()
-            return False, res.stderr.strip() or res.stdout.strip()
+            return res.returncode == 0, res.stdout.strip() or res.stderr.strip()
         except Exception as e:
             return False, str(e)
+        finally:
+            if auth_url:
+                clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
+                self.set_remote_url(remote, clean_url)
 
     def get_current_branch(self):
         branch = self._run(["branch", "--show-current"]).strip()
@@ -452,44 +450,39 @@ class GitEngine:
             return False, "No remote 'origin' configured"
 
         origin_url = self._run(["remote", "get-url", "origin"]).strip()
-        remote_target = "origin"
+        auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_repo_info()
+            owner, repo = self.get_github_coords()
             if owner and repo:
-                remote_target = f"https://{token}@github.com/{owner}/{repo}.git"
+                auth_url = f"https://{token}@github.com/{owner}/{repo}.git"
             elif origin_url.startswith("https://") and "@" not in origin_url:
-                remote_target = origin_url.replace("https://", f"https://{token}@")
+                auth_url = origin_url.replace("https://", f"https://{token}@")
 
-        res = subprocess.run(
-            ["git", "-c", "core.quotepath=false", "push", "-u", remote_target, f"{branch}:{branch}"],
-            cwd=self.root_path,
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if res.returncode != 0:
+        try:
+            if auth_url:
+                self.set_remote_url("origin", auth_url)
+
             res = subprocess.run(
-                ["git", "-c", "core.quotepath=false", "push", remote_target, branch],
+                ["git", "-c", "core.quotepath=false", "push", "-u", "origin", f"{branch}:{branch}"],
                 cwd=self.root_path,
                 capture_output=True,
                 text=True,
                 check=False
             )
+            if res.returncode != 0:
+                res = subprocess.run(
+                    ["git", "-c", "core.quotepath=false", "push", "origin", branch],
+                    cwd=self.root_path,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
 
-        if res.returncode == 0:
-            subprocess.run(
-                ["git", "branch", f"--set-upstream-to=origin/{branch}", branch],
-                cwd=self.root_path,
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            clean_url = self._run(["remote", "get-url", "origin"]).strip()
-            if "@" in clean_url and clean_url.startswith("https://"):
-                clean_url = re.sub(r"https://[^@]+@", "https://", clean_url)
+            return res.returncode == 0, res.stdout or res.stderr
+        finally:
+            if auth_url:
+                clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
                 self.set_remote_url("origin", clean_url)
-
-        return res.returncode == 0, res.stdout or res.stderr
 
     def pull(self):
         res = subprocess.run(["git", "pull"], cwd=self.root_path, capture_output=True, text=True, check=False)
