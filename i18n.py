@@ -162,6 +162,7 @@ TRANSLATIONS = {
         "no_repo_desc": "Open a local Git repository to start staging changes, inspecting commits, and viewing analytics.",
         "welcome_title": "Welcome to GitPulse HUD",
         "welcome_desc": "Please select a Git repository on your system to begin.",
+        "open_project_hint": "Open Project...",
         "btn_init_repo": "Initialize Git in this Folder",
         "init_repo_success": "Git repository initialized successfully!",
         
@@ -342,6 +343,7 @@ TRANSLATIONS = {
         "no_repo_desc": "Выберите локальный Git-репозиторий для подготовки коммитов, просмотра истории и аналитики.",
         "welcome_title": "Добро пожаловать в GitPulse HUD",
         "welcome_desc": "Пожалуйста, выберите Git-репозиторий для начала работы.",
+        "open_project_hint": "Открыть проект...",
         "btn_init_repo": "Инициализировать Git в этой папке",
         "init_repo_success": "Git-репозиторий успешно инициализирован!",
         

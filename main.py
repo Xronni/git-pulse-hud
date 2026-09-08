@@ -269,16 +269,16 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_r.append(self.btn_open_repo)
         repo_card.append(top_r)
 
-        pills_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.sidebar_branch = Gtk.Label(label=self.git.get_current_branch())
+        self.sidebar_pills_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.sidebar_branch = Gtk.Label(label=self.git.get_current_branch() if self.git.is_valid() else "")
         self.sidebar_branch.add_css_class("branch-badge")
-        pills_row.append(self.sidebar_branch)
+        self.sidebar_pills_row.append(self.sidebar_branch)
 
         self.sidebar_ahead = Gtk.Label(label="↑0 ↓0")
         self.sidebar_ahead.add_css_class("ahead-badge")
-        pills_row.append(self.sidebar_ahead)
+        self.sidebar_pills_row.append(self.sidebar_ahead)
 
-        repo_card.append(pills_row)
+        repo_card.append(self.sidebar_pills_row)
         sidebar.append(repo_card)
 
         # Navigation Buttons
@@ -950,6 +950,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         # Sidebar
         self.lbl_sub.set_text(t("app_subtitle"))
         self.btn_open_repo.set_tooltip_text(t("btn_open_repo"))
+        if not self.git.is_valid():
+            self.sidebar_repo_name.set_text(t("open_project_hint"))
+        else:
+            self.sidebar_repo_name.set_text(self.git.get_repo_name())
         for nid, (btn, lbl, key) in self.nav_buttons.items():
             lbl.set_text(t(key))
         self.btn_sound.set_tooltip_text(t("sound_fx"))
@@ -1079,15 +1083,17 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _load_repo_data(self):
         if not self.git.is_valid():
-            self.sidebar_repo_name.set_text(t("no_repo_title"))
-            self.sidebar_branch.set_text("—")
-            self.sidebar_ahead.set_text("—")
+            self.sidebar_repo_name.set_text(t("open_project_hint"))
+            self.sidebar_branch.set_text("")
+            self.sidebar_ahead.set_text("")
+            self.sidebar_pills_row.set_visible(False)
             self.btn_stash_shelf.set_visible(False)
             self.btn_push_only.set_visible(False)
             self.commit_card.set_visible(False)
             self._render_no_repo_placeholder()
             return
 
+        self.sidebar_pills_row.set_visible(True)
         self.btn_stash_shelf.set_visible(True)
         self.sidebar_repo_name.set_text(self.git.get_repo_name())
         self.sidebar_branch.set_text(self.git.get_current_branch())
