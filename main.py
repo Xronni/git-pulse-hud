@@ -394,12 +394,6 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_stash_shelf.connect("clicked", lambda b: self._on_open_stashes())
         top_row.append(self.btn_stash_shelf)
 
-        self.btn_publish_top = Gtk.Button(label=f"☁️ {t('publish_btn')}")
-        self.btn_publish_top.add_css_class("suggested-action")
-        self.btn_publish_top.connect("clicked", self._on_publish_dialog)
-        self.btn_publish_top.set_visible(False)
-        top_row.append(self.btn_publish_top)
-
         self.btn_push_only = Gtk.Button(label=f"↑ {t('btn_push')}")
         self.btn_push_only.add_css_class("primary-btn")
         self.btn_push_only.connect("clicked", lambda b: self._do_push())
@@ -417,11 +411,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         scrolled.set_child(self.files_container)
 
         # Commit Composer Card
-        commit_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        commit_card.add_css_class("hud-card")
+        self.commit_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.commit_card.add_css_class("hud-card")
 
         self.lbl_composer_hdr = Gtk.Label(label=t("commit_builder"), css_classes=["hud-card-header"], xalign=0)
-        commit_card.append(self.lbl_composer_hdr)
+        self.commit_card.append(self.lbl_composer_hdr)
 
         # Conventional Commit Type Chips
         types_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -442,7 +436,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.check_breaking.connect("toggled", lambda *a: self._update_commit_preview())
         types_row.append(self.check_breaking)
 
-        commit_card.append(types_row)
+        self.commit_card.append(types_row)
 
         input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.entry_scope = Gtk.Entry()
@@ -458,7 +452,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.entry_desc.connect("activate", lambda *a: self._on_commit())
         input_row.append(self.entry_desc)
 
-        commit_card.append(input_row)
+        self.commit_card.append(input_row)
 
         bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.preview_lbl = Gtk.Label(label="feat: ...")
@@ -483,8 +477,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.btn_commit_push.connect("clicked", lambda b: self._on_commit(push=True))
         bottom_row.append(self.btn_commit_push)
 
-        commit_card.append(bottom_row)
-        page.append(commit_card)
+        self.commit_card.append(bottom_row)
+        page.append(self.commit_card)
 
         self.stack.add_named(page, "changes")
 
@@ -962,9 +956,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_view1_title.set_text(t("tab_changes"))
         self.lbl_changes_sub.set_text(t("sub_changes"))
         self.btn_stash_shelf.set_label(f"📦 {t('stashes')}")
-        self.btn_publish_top.set_label(f"☁️ {t('publish_btn')}")
+        self.btn_stash_shelf.set_visible(self.git.is_valid())
         is_published = self.git.is_valid() and self.git.has_remote("origin")
-        self.btn_publish_top.set_visible(self.git.is_valid() and not is_published)
         ahead, _ = self.git.get_ahead_behind() if self.git.is_valid() else (0, 0)
         if ahead > 0 and is_published:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
@@ -1084,15 +1077,18 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.sidebar_repo_name.set_text(t("no_repo_title"))
             self.sidebar_branch.set_text("—")
             self.sidebar_ahead.set_text("—")
+            self.btn_stash_shelf.set_visible(False)
+            self.btn_push_only.set_visible(False)
+            self.commit_card.set_visible(False)
             self._render_no_repo_placeholder()
             return
 
+        self.btn_stash_shelf.set_visible(True)
         self.sidebar_repo_name.set_text(self.git.get_repo_name())
         self.sidebar_branch.set_text(self.git.get_current_branch())
         ahead, behind = self.git.get_ahead_behind()
         self.sidebar_ahead.set_text(f"↑{ahead} ↓{behind}")
         has_remote = self.git.has_remote("origin")
-        self.btn_publish_top.set_visible(not has_remote)
         if ahead > 0 and has_remote:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
             self.btn_push_only.set_visible(True)
@@ -1138,8 +1134,14 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self._run_secret_scan()
 
         if not staged and not unstaged and not untracked:
+            self.commit_card.set_visible(False)
             self._render_empty_changes(t("clean_tree"), t("clean_tree_sub"))
             return
+
+        self.commit_card.set_visible(True)
+        can_commit = len(staged) > 0
+        self.btn_commit.set_sensitive(can_commit)
+        self.btn_commit_push.set_sensitive(can_commit and self.git.has_remote("origin"))
 
         if staged:
             hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -1208,10 +1210,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         btn.connect("clicked", self._on_choose_repo)
         btn_row.append(btn)
 
-        btn_init = Gtk.Button(label="✨ " + t("btn_init_repo"))
-        btn_init.add_css_class("suggested-action")
-        btn_init.connect("clicked", self._on_init_repo_clicked)
-        btn_row.append(btn_init)
+        if self.git.repo_path and os.path.isdir(self.git.repo_path) and not self.git.is_valid():
+            folder_name = os.path.basename(self.git.repo_path)
+            btn_init = Gtk.Button(label=f"✨ {t('btn_init_repo')} ({folder_name})")
+            btn_init.add_css_class("suggested-action")
+            btn_init.connect("clicked", self._on_init_repo_clicked)
+            btn_row.append(btn_init)
 
         box.append(btn_row)
 

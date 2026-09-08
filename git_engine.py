@@ -113,6 +113,32 @@ class GitEngine:
         except Exception as e:
             return False, str(e)
 
+    def ensure_author_identity(self, name=None, email=None):
+        """
+        Ensures git user.name and user.email are configured.
+        Prevents 'Author identity unknown' errors on fresh OS installs.
+        """
+        if not self.is_valid():
+            return
+        
+        current_name = self._run(["config", "user.name"]).strip()
+        current_email = self._run(["config", "user.email"]).strip()
+
+        fallback_name = name or os.environ.get("USER", "Developer")
+        fallback_email = email or f"{os.environ.get('USER', 'developer')}@users.noreply.github.com"
+
+        if not current_name:
+            subprocess.run(["git", "config", "user.name", fallback_name], cwd=self.root_path, check=False)
+            global_name = subprocess.run(["git", "config", "--global", "user.name"], capture_output=True, text=True, check=False).stdout.strip()
+            if not global_name:
+                subprocess.run(["git", "config", "--global", "user.name", fallback_name], check=False)
+
+        if not current_email:
+            subprocess.run(["git", "config", "user.email", fallback_email], cwd=self.root_path, check=False)
+            global_email = subprocess.run(["git", "config", "--global", "user.email"], capture_output=True, text=True, check=False).stdout.strip()
+            if not global_email:
+                subprocess.run(["git", "config", "--global", "user.email", fallback_email], check=False)
+
     def has_remote(self, remote_name="origin"):
         """Returns True if the specified remote is configured."""
         if not self.is_valid():

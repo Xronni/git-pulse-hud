@@ -222,18 +222,50 @@ class PublishToGitHubDialog(Gtk.Window):
         ).start()
 
     def _publish_worker(self, name, description, is_private):
-        # 1. Handle uncommitted files / initial commit if repo is empty
+        # 0. Ensure Git author identity so commits never fail on a clean OS
+        author_name = "Developer"
+        author_email = "developer@users.noreply.github.com"
+        if self.user_profile and isinstance(self.user_profile, dict):
+            author_name = self.user_profile.get("name") or self.user_profile.get("login") or author_name
+            login = self.user_profile.get("login") or "developer"
+            author_email = self.user_profile.get("email") or f"{login}@users.noreply.github.com"
+        self.git.ensure_author_identity(name=author_name, email=author_email)
+
+        # 1. Handle uncommitted files / initial commit if repo has no commits
         if not self.git.has_commits():
+            # If folder is empty, create initial README.md
+            status = self.git.get_status_files()
+            has_any_files = bool(status.get("staged") or status.get("unstaged") or status.get("untracked"))
+            readme_path = os.path.join(self.git.root_path, "README.md")
+            if not has_any_files and not os.path.exists(readme_path):
+                try:
+                    with open(readme_path, "w", encoding="utf-8") as f:
+                        f.write(f"# {name}\n\n{description}\n" if description else f"# {name}\n")
+                except Exception:
+                    pass
+
             self.git.stage_all()
             ok_commit, msg_commit = self.git.commit("feat: initial commit")
-            if not ok_commit and "nothing to commit" not in msg_commit.lower():
-                # Try creating a minimal README if directory was empty
-                readme_path = os.path.join(self.git.root_path, "README.md")
-                if not os.path.exists(readme_path):
-                    with open(readme_path, "w", encoding="utf-8") as f:
-                        f.write(f"# {name}\n\n{description}\n")
-                    self.git.stage_all()
-                    self.git.commit("feat: initial commit")
+            if not self.git.has_commits():
+                # Allow empty commit as last resort
+                subprocess.run(
+                    ["git", "commit", "--allow-empty", "-m", "feat: initial commit"],
+                    cwd=self.git.root_path,
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+
+            # Ensure we actually have commits now
+            if not self.git.has_commits():
+                GLib.idle_add(self._on_publish_failed, f"Could not create initial commit: {msg_commit}")
+                return
+
+        # Ensure branch is named 'main'
+        cur_branch = self.git.get_current_branch()
+        if not cur_branch or "HEAD" in cur_branch or cur_branch == "no commits":
+            subprocess.run(["git", "branch", "-M", "main"], cwd=self.git.root_path, check=False)
+            cur_branch = "main"
 
         # 2. Call GitHub API to create repository
         repo_data, err = self.telemetry.create_remote_repo(name, description, is_private)
@@ -254,13 +286,10 @@ class PublishToGitHubDialog(Gtk.Window):
         # 4. Push initial branch using authenticated URL
         tok = self.telemetry.token
         push_url = f"https://{tok}@github.com/{owner_login}/{name}.git" if tok else clone_url
-        cur_branch = self.git.get_current_branch()
-        if not cur_branch or "HEAD" in cur_branch or cur_branch == "no commits":
-            cur_branch = "main"
 
         try:
             res = subprocess.run(
-                ["git", "-c", "core.quotepath=false", "push", "-u", push_url, f"HEAD:{cur_branch}"],
+                ["git", "-c", "core.quotepath=false", "push", "-u", push_url, f"{cur_branch}:{cur_branch}"],
                 cwd=self.git.root_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
