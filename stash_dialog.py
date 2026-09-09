@@ -58,6 +58,7 @@ class StashInspectorDialog(Gtk.Window):
         scrolled_left.set_vexpand(True)
         scrolled_left.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.stash_list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.stash_list_box.set_vexpand(True)
         scrolled_left.set_child(self.stash_list_box)
         left_box.append(scrolled_left)
 
@@ -123,7 +124,9 @@ class StashInspectorDialog(Gtk.Window):
             self.btn_drop.set_sensitive(False)
             empty_lbl = Gtk.Label(label=t("no_stashes"), css_classes=["stat-label"])
             empty_lbl.set_wrap(True)
-            empty_lbl.set_margin_top(40)
+            empty_lbl.set_halign(Gtk.Align.CENTER)
+            empty_lbl.set_valign(Gtk.Align.CENTER)
+            empty_lbl.set_vexpand(True)
             self.stash_list_box.append(empty_lbl)
             self.selected_index = None
             return

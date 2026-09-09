@@ -413,6 +413,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         page.append(scrolled)
 
         self.files_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.files_container.set_vexpand(True)
+        self.files_container.set_hexpand(True)
         scrolled.set_child(self.files_container)
 
         # Commit Composer Card
@@ -535,6 +537,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         page.append(scrolled)
 
         self.history_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.history_container.set_vexpand(True)
+        self.history_container.set_hexpand(True)
         scrolled.set_child(self.history_container)
 
         self.stack.add_named(page, "history")
@@ -546,9 +550,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         if not self.git.is_valid():
             self.btn_branch_switch.set_label("🌿 — ▾")
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            box.set_margin_top(60)
-            box.set_margin_bottom(60)
             box.set_halign(Gtk.Align.CENTER)
+            box.set_valign(Gtk.Align.CENTER)
+            box.set_vexpand(True)
+            box.set_hexpand(True)
             icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
             icon.set_pixel_size(44)
             box.append(icon)
@@ -565,9 +570,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         commits = self.git.get_commit_graph(45)
         if not commits:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            box.set_margin_top(60)
-            box.set_margin_bottom(60)
             box.set_halign(Gtk.Align.CENTER)
+            box.set_valign(Gtk.Align.CENTER)
+            box.set_vexpand(True)
+            box.set_hexpand(True)
             icon = Gtk.Image.new_from_icon_name("document-open-recent-symbolic")
             icon.set_pixel_size(44)
             box.append(icon)
@@ -1213,10 +1219,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.add_css_class("welcome-placeholder-card")
-        box.set_margin_top(40)
-        box.set_margin_bottom(40)
         box.set_halign(Gtk.Align.CENTER)
         box.set_valign(Gtk.Align.CENTER)
+        box.set_vexpand(True)
+        box.set_hexpand(True)
 
         icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
         icon.set_pixel_size(48)
@@ -1250,9 +1256,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _render_empty_changes(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_margin_top(40)
-        box.set_margin_bottom(40)
         box.set_halign(Gtk.Align.CENTER)
+        box.set_valign(Gtk.Align.CENTER)
+        box.set_vexpand(True)
+        box.set_hexpand(True)
 
         has_remote = self.git.is_valid() and self.git.has_remote("origin")
         has_commits = self.git.is_valid() and self.git.has_commits()
