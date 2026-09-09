@@ -268,22 +268,23 @@ def test_secret_scanner():
         report("Clean File Scan", is_clean and len(findings) == 0, "No false positives detected")
 
         leak_file = os.path.join(tmp_dir, "keys.py")
+        mock_pat = "ghp_" + ("T" * 36)
         with open(leak_file, "w") as f:
-            f.write("GITHUB_PAT = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890'\n")
+            f.write(f"GITHUB_PAT = '{mock_pat}'\n")
         ge.stage_file("keys.py")
         is_clean_2, findings_2 = scan_staged_files(ge)
         has_pat = any(f["rule"] == "GitHub Personal Access Token" for f in findings_2)
         report("GitHub PAT Leak Detection", not is_clean_2 and has_pat,
-               f"Detected: {findings_2[0]['rule'] if findings_2 else 'None'} ({findings_2[0]['preview'] if findings_2 else ''})")
+               "Detected GitHub Personal Access Token pattern")
 
         env_file = os.path.join(tmp_dir, ".env")
         with open(env_file, "w") as f:
-            f.write("DB_PASSWORD=secret\n")
+            f.write("DB_PASSWORD=mock_secret_value\n")
         ge.stage_file(".env")
         is_clean_3, findings_3 = scan_staged_files(ge)
         has_env = any(f["rule"] == "Sensitive Configuration File" for f in findings_3)
         report("Sensitive Configuration (.env) Detection", has_env,
-               f"Detected sensitive config: {env_file}")
+               "Detected sensitive configuration file pattern")
 
 
 def test_sound_engine():

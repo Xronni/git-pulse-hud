@@ -101,7 +101,6 @@ def scan_staged_files(git_engine):
 
 
 if __name__ == "__main__":
-    test_text = "const key = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';"
-    for r, reg in SECRET_PATTERNS:
-        if reg.search(test_text):
-            print(f"Self-test matched: {r}")
+    mock_sample = "ghp_" + ("A" * 36)
+    has_match = any(reg.search(mock_sample) for _, reg in SECRET_PATTERNS)
+    sys.exit(0 if has_match else 1)
