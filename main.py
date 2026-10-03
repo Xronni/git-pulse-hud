@@ -1489,8 +1489,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         if not self.git.is_valid() or not self.git.has_remote("origin"):
             return
 
+        tok = self.telemetry.token
+
         def _bg():
-            ok, out = self.git.pull()
+            ok, out = self.git.pull(token=tok)
             def _done():
                 if ok:
                     self.sound.play("pop")

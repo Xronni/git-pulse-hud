@@ -237,21 +237,26 @@ class GitEngine:
         auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
             owner, repo = self.get_github_coords()
+            prefix = token if ":" in token else f"oauth2:{token}"
             if owner and repo:
-                auth_url = f"https://{token}@github.com/{owner}/{repo}.git"
-            elif origin_url.startswith("https://") and "@" not in origin_url:
-                auth_url = origin_url.replace("https://", f"https://{token}@")
+                auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
+            elif origin_url.startswith("https://"):
+                clean_base = re.sub(r"https://[^@]+@", "https://", origin_url)
+                auth_url = clean_base.replace("https://", f"https://{prefix}@")
 
         try:
             if auth_url:
                 self.set_remote_url(remote, auth_url)
 
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
             res = subprocess.run(
                 ["git", "-c", "core.quotepath=false", "push", "-u", remote, f"{cur_branch}:{cur_branch}"],
                 cwd=self.root_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                env=env,
                 check=False
             )
             if res.returncode != 0:
@@ -261,6 +266,7 @@ class GitEngine:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    env=env,
                     check=False
                 )
 
@@ -453,20 +459,25 @@ class GitEngine:
         auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
             owner, repo = self.get_github_coords()
+            prefix = token if ":" in token else f"oauth2:{token}"
             if owner and repo:
-                auth_url = f"https://{token}@github.com/{owner}/{repo}.git"
-            elif origin_url.startswith("https://") and "@" not in origin_url:
-                auth_url = origin_url.replace("https://", f"https://{token}@")
+                auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
+            elif origin_url.startswith("https://"):
+                clean_base = re.sub(r"https://[^@]+@", "https://", origin_url)
+                auth_url = clean_base.replace("https://", f"https://{prefix}@")
 
         try:
             if auth_url:
                 self.set_remote_url("origin", auth_url)
 
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
             res = subprocess.run(
                 ["git", "-c", "core.quotepath=false", "push", "-u", "origin", f"{branch}:{branch}"],
                 cwd=self.root_path,
                 capture_output=True,
                 text=True,
+                env=env,
                 check=False
             )
             if res.returncode != 0:
@@ -475,6 +486,7 @@ class GitEngine:
                     cwd=self.root_path,
                     capture_output=True,
                     text=True,
+                    env=env,
                     check=False
                 )
 
@@ -484,9 +496,35 @@ class GitEngine:
                 clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
                 self.set_remote_url("origin", clean_url)
 
-    def pull(self):
-        res = subprocess.run(["git", "pull"], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+    def pull(self, token=None):
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        if not self.has_remote("origin"):
+            return False, "No remote 'origin' configured"
+
+        origin_url = self._run(["remote", "get-url", "origin"]).strip()
+        auth_url = None
+        if token and (origin_url.startswith("https://") or not origin_url):
+            owner, repo = self.get_github_coords()
+            prefix = token if ":" in token else f"oauth2:{token}"
+            if owner and repo:
+                auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
+            elif origin_url.startswith("https://"):
+                clean_base = re.sub(r"https://[^@]+@", "https://", origin_url)
+                auth_url = clean_base.replace("https://", f"https://{prefix}@")
+
+        try:
+            if auth_url:
+                self.set_remote_url("origin", auth_url)
+
+            env = os.environ.copy()
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            res = subprocess.run(["git", "pull"], cwd=self.root_path, capture_output=True, text=True, env=env, check=False)
+            return res.returncode == 0, res.stdout or res.stderr
+        finally:
+            if auth_url:
+                clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
+                self.set_remote_url("origin", clean_url)
 
     def list_branches(self):
         out = self._run(["branch", "--list", "--format=%(refname:short)"])
