@@ -91,20 +91,20 @@ class GitEngine:
             return os.path.basename(self.root_path)
         return "No Repository"
 
-    def get_github_coords(self):
-        """Returns (owner, repo) if origin is a GitHub remote, else (None, None)."""
-        remote_url = self._run(["remote", "get-url", "origin"])
+    def get_github_coords(self, remote="origin"):
+        """Returns (owner, repo) if remote is a GitHub remote, else (None, None)."""
+        remote_url = self._run(["remote", "get-url", remote]).strip()
         if not remote_url:
             return None, None
         
-        # Matches https://github.com/owner/repo.git or git@github.com:owner/repo.git
-        patterns = [
-            r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+)(?:\.git)?",
-        ]
-        for pat in patterns:
-            m = re.search(pat, remote_url)
-            if m:
-                return m.group("owner"), m.group("repo")
+        clean = remote_url
+        if clean.endswith(".git"):
+            clean = clean[:-4]
+
+        # Matches https://github.com/owner/repo or git@github.com:owner/repo
+        m = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/\s]+)$", clean)
+        if m:
+            return m.group("owner"), m.group("repo")
         return None, None
 
     def get_github_repo_info(self):
@@ -236,8 +236,14 @@ class GitEngine:
         origin_url = self._run(["remote", "get-url", remote]).strip()
         auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_coords()
-            prefix = token if ":" in token else f"oauth2:{token}"
+            owner, repo = self.get_github_coords(remote)
+            if ":" in token:
+                prefix = token
+            elif owner:
+                prefix = f"{owner}:{token}"
+            else:
+                prefix = f"x-access-token:{token}"
+
             if owner and repo:
                 auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
             elif origin_url.startswith("https://"):
@@ -458,8 +464,14 @@ class GitEngine:
         origin_url = self._run(["remote", "get-url", "origin"]).strip()
         auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_coords()
-            prefix = token if ":" in token else f"oauth2:{token}"
+            owner, repo = self.get_github_coords("origin")
+            if ":" in token:
+                prefix = token
+            elif owner:
+                prefix = f"{owner}:{token}"
+            else:
+                prefix = f"x-access-token:{token}"
+
             if owner and repo:
                 auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
             elif origin_url.startswith("https://"):
@@ -505,8 +517,14 @@ class GitEngine:
         origin_url = self._run(["remote", "get-url", "origin"]).strip()
         auth_url = None
         if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_coords()
-            prefix = token if ":" in token else f"oauth2:{token}"
+            owner, repo = self.get_github_coords("origin")
+            if ":" in token:
+                prefix = token
+            elif owner:
+                prefix = f"{owner}:{token}"
+            else:
+                prefix = f"x-access-token:{token}"
+
             if owner and repo:
                 auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
             elif origin_url.startswith("https://"):

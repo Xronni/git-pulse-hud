@@ -318,7 +318,8 @@ class PublishToGitHubDialog(Gtk.Window):
             self.btn_cfg_token.remove_css_class("suggested-action")
             self.btn_publish.set_sensitive(True)
         else:
-            self.lbl_acc_desc.set_text(f"⚠️ {t('publish_account_not_connected')}")
+            detail = f" ({err})" if err else ""
+            self.lbl_acc_desc.set_text(f"⚠️ {t('publish_account_not_connected')}{detail}")
             self.btn_cfg_token.set_label("🔑 " + t("token_settings"))
             self.btn_cfg_token.add_css_class("suggested-action")
             self.btn_publish.set_sensitive(False)
@@ -335,6 +336,8 @@ class PublishToGitHubDialog(Gtk.Window):
         dlg.present()
 
     def _on_token_saved(self):
+        tok = self.config.get("github_token", "").strip()
+        self.telemetry.set_token(tok)
         self._load_user_profile_async()
 
     def _on_publish_clicked(self, btn):

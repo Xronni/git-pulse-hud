@@ -6,15 +6,47 @@ and traffic analytics (Page Views, Unique Visitors, Referrers) via GitHub API.
 """
 
 import os
+import re
 import json
 import urllib.request
 import urllib.error
 from datetime import datetime
 
 
+def find_system_github_token():
+    """Finds any working GitHub token in environment or ~/.git-credentials."""
+    for var in ["GITHUB_TOKEN", "GH_TOKEN"]:
+        val = os.environ.get(var, "").strip()
+        if val:
+            return val
+
+    creds_path = os.path.expanduser("~/.git-credentials")
+    if os.path.isfile(creds_path):
+        try:
+            with open(creds_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or "github.com" not in line:
+                        continue
+                    m = re.search(r"https://(?:[^:@]+:)?([^@]+)@github\.com", line)
+                    if m:
+                        tok = m.group(1).strip()
+                        if tok.startswith(("ghp_", "gho_", "github_pat_", "ghu_", "ghs_")):
+                            return tok
+        except Exception:
+            pass
+    return ""
+
+
+def validate_token(token):
+    """Verifies a GitHub token against GitHub API. Returns (user_dict, error)."""
+    t = GitHubTelemetry(token)
+    return t.get_user_profile()
+
+
 class GitHubTelemetry:
     def __init__(self, token=None):
-        self.token = token or os.environ.get("GITHUB_TOKEN", "")
+        self.token = (token or "").strip() or find_system_github_token()
 
     def set_token(self, token):
         self.token = token.strip()
@@ -39,6 +71,7 @@ class GitHubTelemetry:
                 err_msg = err_body.get("message", e.reason)
             except Exception:
                 pass
+            return None, f"HTTP {e.code}: {err_msg}"
         except Exception as e:
             return None, str(e)
 

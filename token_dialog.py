@@ -8,9 +8,13 @@ Personal Access Tokens for both GitPulse telemetry and terminal Git push.
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, Gdk, Gio, Pango
+from gi.repository import Gtk, Adw, Gdk, Gio, Pango, GLib
 import subprocess
+import threading
+import os
+import re
 from i18n import t
+from github_telemetry import find_system_github_token, validate_token
 
 
 class GitTokenGuideDialog(Gtk.Window):
@@ -126,6 +130,10 @@ class GitTokenGuideDialog(Gtk.Window):
         # Actions in input card
         act_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 
+        self.btn_detect = Gtk.Button(label=t("detect_from_git"), css_classes=["subtle-btn"])
+        self.btn_detect.connect("clicked", self._on_auto_detect)
+        act_row.append(self.btn_detect)
+
         self.btn_clear = Gtk.Button(label=t("clear_token"), css_classes=["subtle-btn"])
         self.btn_clear.connect("clicked", self._on_clear_token)
         act_row.append(self.btn_clear)
@@ -195,18 +203,54 @@ class GitTokenGuideDialog(Gtk.Window):
         self._update_status_display()
 
     def _update_status_display(self):
-        tok = self.config.get("github_token", "").strip()
-        if tok:
-            masked = tok[:4] + "••••••••" + tok[-4:] if len(tok) >= 8 else "••••"
-            self.status_badge.set_label(f"✓ {t('token_active_badge')} ({masked})")
-            self.status_badge.remove_css_class("status-del")
-            self.status_badge.add_css_class("status-add")
-            self.btn_clear.set_sensitive(True)
-        else:
+        tok = self.config.get("github_token", "").strip() or self.entry.get_text().strip()
+        self._validate_and_update_badge(tok)
+
+    def _validate_and_update_badge(self, tok):
+        tok = (tok or "").strip()
+        if not tok:
             self.status_badge.set_label(t("token_not_set"))
             self.status_badge.remove_css_class("status-add")
             self.status_badge.add_css_class("status-del")
             self.btn_clear.set_sensitive(False)
+            return
+
+        masked = tok[:4] + "••••••••" + tok[-4:] if len(tok) >= 8 else "••••"
+        self.status_badge.set_label(f"⏳ {t('token_verifying')} ({masked})")
+        self.status_badge.remove_css_class("status-add")
+        self.status_badge.remove_css_class("status-del")
+        self.btn_clear.set_sensitive(True)
+
+        def _worker():
+            profile, err = validate_token(tok)
+            def _apply():
+                if profile and "login" in profile:
+                    login = profile.get("login", "")
+                    self.status_badge.set_label(f"✓ {t('token_active_badge')} (@{login})")
+                    self.status_badge.remove_css_class("status-del")
+                    self.status_badge.add_css_class("status-add")
+                else:
+                    err_msg = err or t("token_invalid")
+                    if len(err_msg) > 36:
+                        err_msg = err_msg[:33] + "..."
+                    self.status_badge.set_label(f"✗ {err_msg}")
+                    self.status_badge.remove_css_class("status-add")
+                    self.status_badge.add_css_class("status-del")
+            GLib.idle_add(_apply)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_auto_detect(self, btn):
+        tok = find_system_github_token()
+        if tok:
+            self.sound.play("click")
+            self.entry.set_text(tok)
+            self._validate_and_update_badge(tok)
+        else:
+            self.sound.play("pop")
+            self.status_badge.set_label(t("token_not_found_system"))
+            self.status_badge.remove_css_class("status-add")
+            self.status_badge.add_css_class("status-del")
 
     def _on_open_browser_clicked(self, btn):
         self.sound.play("click")
@@ -228,16 +272,43 @@ class GitTokenGuideDialog(Gtk.Window):
         self.entry.set_text("")
         self.config["github_token"] = ""
         self.telemetry.set_token("")
-        self._update_status_display()
+        self._validate_and_update_badge("")
         if self.on_saved:
             self.on_saved()
+
+    def _sync_git_credentials(self, tok):
+        """Ensures ~/.git-credentials has the active working token and cleans dead ones."""
+        if not tok:
+            return
+        creds_path = os.path.expanduser("~/.git-credentials")
+        lines = []
+        if os.path.isfile(creds_path):
+            try:
+                with open(creds_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        l = line.strip()
+                        if l and ("github.com" not in l or tok in l):
+                            lines.append(l)
+            except Exception:
+                pass
+        entry = f"https://x-access-token:{tok}@github.com"
+        if entry not in lines:
+            lines.insert(0, entry)
+        try:
+            with open(creds_path, "w", encoding="utf-8") as f:
+                for l in lines:
+                    f.write(l + "\n")
+            os.chmod(creds_path, 0o600)
+        except Exception:
+            pass
 
     def _on_save_token(self, btn):
         tok = self.entry.get_text().strip()
         self.config["github_token"] = tok
         self.telemetry.set_token(tok)
         self.sound.play("commit")
-        self._update_status_display()
+        self._sync_git_credentials(tok)
+        self._validate_and_update_badge(tok)
         if self.on_saved:
             self.on_saved()
         self.close()

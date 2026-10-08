@@ -75,6 +75,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self.config["last_repo"] = ""
 
         self.telemetry = GitHubTelemetry(token=self.config.get("github_token", ""))
+        if not self.config.get("github_token") and self.telemetry.token:
+            self.config["github_token"] = self.telemetry.token
+            self._save_config()
         self.active_view = "changes"
         self.selected_type = "feat"
         self.last_scan_findings = []
