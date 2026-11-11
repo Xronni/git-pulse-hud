@@ -122,6 +122,7 @@ cp "$SCRIPT_DIR/uninstall.sh" "$TAR_DIR/"
 cp "$SCRIPT_DIR/test.sh" "$TAR_DIR/"
 cp "$SCRIPT_DIR/README.md" "$TAR_DIR/"
 cp "$SCRIPT_DIR/LICENSE" "$TAR_DIR/"
+cp "$SCRIPT_DIR/git-pulse-hud.desktop" "$TAR_DIR/"
 cp "$SCRIPT_DIR/assets/icon.png" "$TAR_DIR/assets/"
 
 chmod +x "$TAR_DIR"/*.sh "$TAR_DIR/main.py"
