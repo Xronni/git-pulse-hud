@@ -5,6 +5,7 @@ Automatically generates structured Conventional Commit release notes and creates
 """
 
 import re
+import threading
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -13,9 +14,10 @@ from i18n import t
 
 
 class ReleaseDrafterDialog(Gtk.Window):
-    def __init__(self, parent, git_engine, sound_engine, on_tag_created=None):
+    def __init__(self, parent, git_engine, sound_engine, on_tag_created=None, token=None):
         super().__init__(transient_for=parent, modal=True)
         self.git = git_engine
+        self.token = token
         self.sound = sound_engine
         self.on_tag_created = on_tag_created
 
@@ -176,8 +178,9 @@ class ReleaseDrafterDialog(Gtk.Window):
 
         ok, out = self.git.create_tag(tag_name, message)
         if ok:
-            # Push tag to remote if origin is configured
-            self.git._run(["push", "origin", tag_name])
+            # Push tag to remote (if origin is configured) without blocking the UI
+            tok = self.token
+            threading.Thread(target=lambda: self.git.push_tag(tag_name, token=tok), daemon=True).start()
             self.sound.play("commit")
             if self.on_tag_created:
                 self.on_tag_created(tag_name)

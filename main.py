@@ -27,6 +27,7 @@ from secret_scanner import scan_staged_files
 from stash_dialog import StashInspectorDialog
 from release_dialog import ReleaseDrafterDialog
 from quick_switcher import QuickSwitcherDialog
+from branch_switcher import BranchSwitcherPopover
 import i18n
 from i18n import t
 
@@ -253,7 +254,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         repo_card.add_css_class("sidebar-repo-card")
         repo_card.set_tooltip_text(t("quick_switcher_placeholder"))
         repo_click = Gtk.GestureClick()
-        repo_click.connect("pressed", lambda g, n, x, y: self._on_open_quick_switcher())
+        repo_click.connect("released", lambda g, n, x, y: self._on_repo_card_clicked(repo_card, x, y))
         repo_card.add_controller(repo_click)
 
         top_r = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -273,8 +274,12 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         repo_card.append(top_r)
 
         self.sidebar_pills_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.sidebar_branch = Gtk.Label(label=self.git.get_current_branch() if self.git.is_valid() else "")
-        self.sidebar_branch.add_css_class("branch-badge")
+        self.sidebar_branch = Gtk.Button(css_classes=["branch-badge", "branch-badge-btn"])
+        self.sidebar_branch_lbl = Gtk.Label(ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=16)
+        self.sidebar_branch.set_child(self.sidebar_branch_lbl)
+        self.sidebar_branch.set_tooltip_text(t("branch_switch_tooltip"))
+        self.sidebar_branch.connect("clicked", self._on_branch_switcher_clicked)
+        self._set_sidebar_branch(self.git.get_current_branch() if self.git.is_valid() else "")
         self.sidebar_pills_row.append(self.sidebar_branch)
 
         self.sidebar_ahead = Gtk.Label(label="↑0 ↓0")
@@ -529,6 +534,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         top_row.append(Gtk.Box(hexpand=True))
 
         self.btn_branch_switch = Gtk.Button(label="🌿 main ▾", css_classes=["branch-switch-btn"])
+        self.btn_branch_switch.set_tooltip_text(t("branch_switch_tooltip"))
         self.btn_branch_switch.connect("clicked", self._on_branch_switcher_clicked)
         top_row.append(self.btn_branch_switch)
 
@@ -1000,6 +1006,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.lbl_hist_sub.set_text(t("sub_history"))
         cur_branch = self.git.get_current_branch() if self.git.is_valid() else "—"
         self.btn_branch_switch.set_label(f"🌿 {cur_branch} ▾")
+        self.btn_branch_switch.set_tooltip_text(t("branch_switch_tooltip"))
+        self.sidebar_branch.set_tooltip_text(t("branch_switch_tooltip"))
 
         # View 3
         self.lbl_view3_title.set_text(t("tab_pulse"))
@@ -1099,7 +1107,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
     def _load_repo_data(self):
         if not self.git.is_valid():
             self.sidebar_repo_name.set_text(t("open_project_hint"))
-            self.sidebar_branch.set_text("")
+            self._set_sidebar_branch("")
             self.sidebar_ahead.set_text("")
             self.sidebar_pills_row.set_visible(False)
             self.btn_stash_shelf.set_visible(False)
@@ -1111,7 +1119,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.sidebar_pills_row.set_visible(True)
         self.btn_stash_shelf.set_visible(True)
         self.sidebar_repo_name.set_text(self.git.get_repo_name())
-        self.sidebar_branch.set_text(self.git.get_current_branch())
+        self._set_sidebar_branch(self.git.get_current_branch())
         ahead, behind = self.git.get_ahead_behind()
         self.sidebar_ahead.set_text(f"↑{ahead} ↓{behind}")
         has_remote = self.git.has_remote("origin")
@@ -1135,8 +1143,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         staged = status.get("staged", [])
         unstaged = status.get("unstaged", [])
         untracked = status.get("untracked", [])
+        conflicted = status.get("conflicted", [])
 
-        has_files = bool(staged or unstaged or untracked)
+        has_files = bool(staged or unstaged or untracked or conflicted)
 
         # Show Publish to GitHub banner if repo has no origin remote AND there are files to commit
         if not self.git.has_remote("origin") and has_files:
@@ -1164,7 +1173,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         self._run_secret_scan()
 
-        if not staged and not unstaged and not untracked:
+        if not has_files:
             self.commit_card.set_visible(False)
             self._render_empty_changes()
             return
@@ -1179,8 +1188,23 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         else:
             self.btn_commit_push.set_label(f"☁️ {t('btn_commit_publish')}")
 
+        if conflicted:
+            hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            lbl = Gtk.Label(label=f"⚠ {t('conflicted_title')} ({len(conflicted)})", css_classes=["hud-card-header", "conflict-header"], xalign=0)
+            hdr.append(lbl)
+            hdr.append(Gtk.Box(hexpand=True))
+            if self.git.is_merging():
+                btn_abort = Gtk.Button(label=t("merge_abort"), css_classes=["flat", "danger-text"])
+                btn_abort.connect("clicked", self._on_abort_merge)
+                hdr.append(btn_abort)
+            self.files_container.append(hdr)
+            for item in conflicted:
+                self._add_file_row(item, is_staged=False)
+
         if staged:
             hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            if conflicted:
+                hdr.set_margin_top(12)
             lbl = Gtk.Label(label=f"{t('staged_title')} ({len(staged)})", css_classes=["hud-card-header"], xalign=0)
             hdr.append(lbl)
             hdr.append(Gtk.Box(hexpand=True))
@@ -1364,7 +1388,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
         st_char = item.get("status", "M")
         badge = Gtk.Label(label=st_char, css_classes=["status-tag"])
-        if st_char in ["M", "T"]:
+        if st_char in ["M", "T", "R", "C"]:
             badge.add_css_class("status-mod")
         elif st_char in ["A", "?"]:
             badge.add_css_class("status-add")
@@ -1470,6 +1494,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         if not self.git.has_remote("origin"):
             self._on_publish_dialog()
             return
+        if self.git.is_detached():
+            self.sound.play("error")
+            self._show_error_dialog(t("push_failed"), t("push_detached"))
+            return
 
         self.btn_push_only.set_sensitive(False)
         tok = self.telemetry.token
@@ -1490,6 +1518,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _do_pull(self):
         if not self.git.is_valid() or not self.git.has_remote("origin"):
+            return
+        if self.git.is_detached():
+            self.sound.play("error")
+            self._show_error_dialog(t("pull_failed"), t("push_detached"))
             return
 
         tok = self.telemetry.token
@@ -1659,6 +1691,9 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             ):
                 self._on_open_quick_switcher()
                 return True
+            if keyval in (Gdk.KEY_b, Gdk.KEY_B, Gdk.KEY_Cyrillic_i, Gdk.KEY_Cyrillic_I):
+                self._on_branch_switcher_clicked(self.sidebar_branch)
+                return True
         return False
 
     def _on_open_quick_switcher(self):
@@ -1696,72 +1731,55 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         else:
             self.sound.play("error")
 
+    def _on_repo_card_clicked(self, card, x, y):
+        # Buttons inside the card (branch badge, open folder) handle their own clicks
+        widget = card.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while widget is not None and widget is not card:
+            if isinstance(widget, Gtk.Button):
+                return
+            widget = widget.get_parent()
+        self._on_open_quick_switcher()
+
+    def _set_sidebar_branch(self, name):
+        self.sidebar_branch_lbl.set_text(f"{name} ▾" if name else "")
+        self.sidebar_branch.set_visible(bool(name))
+
     def _on_branch_switcher_clicked(self, btn):
         if not self.git.is_valid():
             return
         self.sound.play("click")
-        branches = self.git.list_branches_detailed()
-        if not branches:
-            return
+        # One popover per anchor widget, created lazily and reused
+        if not hasattr(self, "_branch_popovers"):
+            self._branch_popovers = {}
+        pop = self._branch_popovers.get(btn)
+        if pop is None:
+            pop = BranchSwitcherPopover(
+                window=self,
+                git_engine=self.git,
+                sound_engine=self.sound,
+                get_token=lambda: self.telemetry.token,
+                on_changed=self._on_branches_changed,
+                on_error=self._show_error_dialog,
+            )
+            pop.set_parent(btn)
+            self._branch_popovers[btn] = pop
+        pop.open()
 
-        popover = Gtk.Popover()
-        popover.set_parent(btn)
-        popover.set_has_arrow(True)
-        popover.set_autohide(True)
+    def _on_branches_changed(self):
+        self._load_repo_data()
+        if self.active_view == "history":
+            self._refresh_history_view()
+        elif self.active_view == "pulse":
+            self._refresh_pulse_view()
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        box.set_margin_top(8)
-        box.set_margin_bottom(8)
-        box.set_margin_start(8)
-        box.set_margin_end(8)
-        box.set_size_request(220, -1)
-
-        hdr = Gtk.Label(label=t("switch_branch"), css_classes=["stat-label"], xalign=0)
-        hdr.set_margin_bottom(4)
-        box.append(hdr)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_max_content_height(280)
-        scrolled.set_propagate_natural_height(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-
-        list_b = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        scrolled.set_child(list_b)
-        box.append(scrolled)
-
-        for b in branches:
-            b_name = b["name"]
-            is_cur = b["current"]
-            b_btn = Gtk.Button()
-            b_btn.add_css_class("flat")
-            b_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            b_icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic" if is_cur else "folder-symbolic")
-            b_icon.set_pixel_size(14)
-            b_icon.set_opacity(1.0 if is_cur else 0.3)
-            b_row.append(b_icon)
-            lbl = Gtk.Label(label=b_name, xalign=0, hexpand=True)
-            if is_cur:
-                lbl.add_css_class("status-tag")
-            b_row.append(lbl)
-            b_btn.set_child(b_row)
-
-            def _checkout(bn=b_name, pop=popover):
-                pop.popdown()
-                if bn != self.git.get_current_branch():
-                    ok, out = self.git.checkout_branch(bn)
-                    if ok:
-                        self.sound.play("click")
-                        self._load_repo_data()
-                        self._refresh_history_view()
-                    else:
-                        self.sound.play("error")
-                        self._show_error_dialog(t("checkout_failed"), out)
-
-            b_btn.connect("clicked", lambda _, bn=b_name, p=popover: _checkout(bn, p))
-            list_b.append(b_btn)
-
-        popover.set_child(box)
-        popover.popup()
+    def _on_abort_merge(self, btn):
+        ok, out = self.git.merge_abort()
+        if ok:
+            self.sound.play("pop")
+        else:
+            self.sound.play("error")
+            self._show_error_dialog(t("merge_failed"), out)
+        self._load_repo_data()
 
     def _on_open_stashes(self):
         if not self.git.is_valid():
@@ -1783,6 +1801,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             parent=self,
             git_engine=self.git,
             sound_engine=self.sound,
+            token=self.telemetry.token,
             on_tag_created=self._load_repo_data
         )
         dlg.present()

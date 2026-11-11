@@ -36,7 +36,9 @@
 * 🌿 **Interactive Branch Tree & Visual Git Graph:**
   * Custom Cairo supersampled vector graphics rendering parallel branch tracks with distinct color lanes.
   * Smooth branch merge curves and commit node glow indicators.
-  * Top bar branch switcher dropdown with 1-click `git checkout`.
+  * Branch manager (click the branch badge in the sidebar or press `Ctrl+B`): search, switch, create, rename, merge and delete branches, check out remote branches, fetch.
+  * Uncommitted changes blocking a switch? One click stashes them and switches.
+  * Merge conflicts are listed in the Changes view with an **Abort Merge** button.
 * 📦 **Git Stash Shelf & Inspector:**
   * Dedicated split-view modal dialog displaying all stored stashes with relative timestamps and messages.
   * Real-time syntax-colored diff preview (`+green`, `-red`).
@@ -155,7 +157,9 @@ git-pulse-hud/
 * 🌿 **Интерактивное дерево веток и граф Git:**
   * Векторный рендер графа на Cairo с параллельными дорожками разных цветов.
   * Плавные кривые слияния (merge) и индикаторы узлов коммитов.
-  * Выпадающее меню переключения веток в 1 клик (`🌿 <ветка> ▾`).
+  * Менеджер веток (клик по плашке ветки в сайдбаре или `Ctrl+B`): поиск, переключение, создание, переименование, слияние и удаление веток, переход на ветки с сервера, fetch.
+  * Незакоммиченные изменения мешают переключиться? Один клик — спрятать их в stash и переключиться.
+  * Конфликты слияния показываются на вкладке изменений с кнопкой **«Прервать слияние»**.
 * 📦 **Полка и инспектор Git Stash:**
   * Отдельное окно управления тайниками с датами и сообщениями.
   * Моментальный предпросмотр diff каждого тайника с синтаксической подсветкой.

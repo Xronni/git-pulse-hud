@@ -1,58 +1,144 @@
 #!/usr/bin/env python3
 """
 GitPulse HUD — Git Engine
-High-performance, pure-subprocess Git client and local repository analytics engine.
+Pure-subprocess Git client and local repository analytics engine.
+
+Every git invocation goes through GitEngine._git(): it applies a timeout,
+disables interactive prompts, decodes output safely and returns a GitResult
+instead of raising. Public methods keep returning plain values or
+(ok, message) tuples.
 """
 
+import base64
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from urllib.parse import urlsplit
+
+# Timeouts (seconds)
+LOCAL_TIMEOUT = 15      # fast read-only commands
+LONG_TIMEOUT = 300      # commands that touch the work tree or run hooks (switch, merge, commit, add)
+NETWORK_TIMEOUT = 180   # push / pull / fetch
+
+DETACHED_HEAD_MSG = "HEAD is detached: switch to a branch first."
+
+
+def _is_forbidden_root(path):
+    """Home, / and /root must never be treated as a repository."""
+    home_abs = os.path.abspath(os.path.expanduser("~"))
+    return os.path.abspath(path) in (home_abs, "/", "/root")
+
+
+@dataclass
+class GitResult:
+    ok: bool
+    out: str = ""
+    err: str = ""
+    code: int = 0
+
+    @property
+    def message(self):
+        """Human-readable output: stdout on success, stderr (or stdout) on failure."""
+        if self.ok:
+            return (self.out or self.err).strip()
+        return (self.err or self.out).strip()
+
+    def pair(self):
+        return self.ok, self.message
 
 
 class GitEngine:
     def __init__(self, repo_path=None):
-        home_abs = os.path.abspath(os.path.expanduser("~"))
-        if repo_path and os.path.exists(repo_path) and os.path.abspath(repo_path) not in [home_abs, "/", "/root"]:
+        if repo_path and os.path.exists(repo_path) and not _is_forbidden_root(repo_path):
             self.repo_path = repo_path
             self.root_path = self.find_repo_root(self.repo_path)
         else:
             self.repo_path = None
             self.root_path = None
 
-    def find_repo_root(self, path):
-        if not path or not os.path.exists(path):
-            return None
-        home_abs = os.path.abspath(os.path.expanduser("~"))
-        if os.path.abspath(path) in [home_abs, "/", "/root"]:
-            return None
+    # --- Low-level runner ---
+
+    def _git(self, args, timeout=LOCAL_TIMEOUT, extra_env=None, cwd=None, strip=True):
+        """Runs one git command. Never raises; never prompts on a terminal."""
+        cwd = cwd or self.root_path
+        if not cwd or not os.path.isdir(cwd):
+            return GitResult(False, err="Not a valid repository", code=-1)
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        if extra_env:
+            env.update(extra_env)
         try:
             res = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=path,
+                ["git", "-c", "core.quotepath=false"] + list(args),
+                cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                timeout=5,
-                check=False
+                stdin=subprocess.DEVNULL,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=timeout,
+                check=False,
             )
-            if res.returncode == 0:
-                root = res.stdout.strip()
-                if os.path.abspath(root) in [home_abs, "/", "/root"]:
-                    return None
-                return root
-        except Exception:
-            pass
+        except subprocess.TimeoutExpired:
+            return GitResult(False, err=f"git {args[0]} timed out after {timeout}s", code=-1)
+        except (OSError, ValueError) as e:
+            return GitResult(False, err=str(e), code=-1)
+        out = res.stdout.rstrip("\r\n") if strip else res.stdout
+        return GitResult(res.returncode == 0, out, res.stderr.strip(), res.returncode)
+
+    def _run(self, args, check=False):
+        """Legacy helper: stdout of a git command ('' if the repo is invalid)."""
+        if not self.is_valid():
+            return ""
+        return self._git(args).out
+
+    def _auth_env(self, token, remote="origin"):
+        """Env vars that add an HTTP auth header to a single git process.
+
+        Uses GIT_CONFIG_COUNT/KEY/VALUE (git >= 2.31), so the token is never
+        written to .git/config, never embedded in the remote URL and never
+        visible in the process argument list.
+        """
+        if not token:
+            return None
+        url = self._run(["remote", "get-url", remote]).strip()
+        if not url.startswith("https://"):
+            return None
+        parts = urlsplit(url)
+        if not parts.hostname:
+            return None
+        if ":" in token:
+            credentials = token
+        else:
+            owner, _ = self.get_github_coords(remote)
+            credentials = f"{owner or 'x-access-token'}:{token}"
+        encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+        port = f":{parts.port}" if parts.port else ""
+        return {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": f"http.https://{parts.hostname}{port}/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {encoded}",
+        }
+
+    def _network(self, args, token=None, remote="origin"):
+        return self._git(args, timeout=NETWORK_TIMEOUT, extra_env=self._auth_env(token, remote))
+
+    # --- Repository discovery ---
+
+    def find_repo_root(self, path):
+        if not path or not os.path.exists(path) or _is_forbidden_root(path):
+            return None
+        res = self._git(["rev-parse", "--show-toplevel"], cwd=path, timeout=5)
+        if res.ok and res.out.strip() and not _is_forbidden_root(res.out.strip()):
+            return res.out.strip()
         return None
 
     def set_repo(self, path):
-        if not path or not os.path.exists(path):
-            self.repo_path = None
-            self.root_path = None
-            return False
-        home_abs = os.path.abspath(os.path.expanduser("~"))
-        if os.path.abspath(path) in [home_abs, "/", "/root"]:
+        if not path or not os.path.exists(path) or _is_forbidden_root(path):
             self.repo_path = None
             self.root_path = None
             return False
@@ -69,23 +155,6 @@ class GitEngine:
     def is_valid(self):
         return self.root_path is not None and os.path.exists(self.root_path)
 
-    def _run(self, args, check=False):
-        if not self.is_valid():
-            return ""
-        try:
-            res = subprocess.run(
-                ["git", "-c", "core.quotepath=false"] + args,
-                cwd=self.root_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=8,
-                check=check
-            )
-            return res.stdout.rstrip("\r\n")
-        except Exception:
-            return ""
-
     def get_repo_name(self):
         if self.root_path:
             return os.path.basename(self.root_path)
@@ -96,7 +165,7 @@ class GitEngine:
         remote_url = self._run(["remote", "get-url", remote]).strip()
         if not remote_url:
             return None, None
-        
+
         clean = remote_url
         if clean.endswith(".git"):
             clean = clean[:-4]
@@ -117,37 +186,16 @@ class GitEngine:
         if not target or not os.path.exists(target):
             return False, "Directory does not exist or not specified"
         target_abs = os.path.abspath(target)
-        home_abs = os.path.abspath(os.path.expanduser("~"))
-        if target_abs in [home_abs, "/", "/root", "/home"]:
+        if _is_forbidden_root(target_abs) or target_abs == "/home":
             return False, "Cannot initialize Git directly in home or root directory"
-        try:
-            res = subprocess.run(
-                ["git", "init", "-b", "main"],
-                cwd=target_abs,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=10,
-                check=False
-            )
-            if res.returncode == 0:
-                self.set_repo(target_abs)
-                return True, "Repository initialized"
+        res = self._git(["init", "-b", "main"], cwd=target_abs)
+        if not res.ok:
             # Fallback for older git versions without -b flag
-            res = subprocess.run(
-                ["git", "init"],
-                cwd=target,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
-            if res.returncode == 0:
-                self.set_repo(target)
-                return True, "Repository initialized"
-            return False, res.stderr.strip()
-        except Exception as e:
-            return False, str(e)
+            res = self._git(["init"], cwd=target_abs)
+        if res.ok:
+            self.set_repo(target_abs)
+            return True, "Repository initialized"
+        return False, res.message
 
     def ensure_author_identity(self, name=None, email=None):
         """
@@ -156,24 +204,18 @@ class GitEngine:
         """
         if not self.is_valid():
             return
-        
-        current_name = self._run(["config", "user.name"]).strip()
-        current_email = self._run(["config", "user.email"]).strip()
 
         fallback_name = name or os.environ.get("USER", "Developer")
         fallback_email = email or f"{os.environ.get('USER', 'developer')}@users.noreply.github.com"
 
-        if not current_name:
-            subprocess.run(["git", "config", "user.name", fallback_name], cwd=self.root_path, check=False)
-            global_name = subprocess.run(["git", "config", "--global", "user.name"], capture_output=True, text=True, check=False).stdout.strip()
-            if not global_name:
-                subprocess.run(["git", "config", "--global", "user.name", fallback_name], check=False)
+        for key, fallback in (("user.name", fallback_name), ("user.email", fallback_email)):
+            if self._run(["config", key]).strip():
+                continue
+            self._git(["config", key, fallback])
+            if not self._run(["config", "--global", key]).strip():
+                self._git(["config", "--global", key, fallback])
 
-        if not current_email:
-            subprocess.run(["git", "config", "user.email", fallback_email], cwd=self.root_path, check=False)
-            global_email = subprocess.run(["git", "config", "--global", "user.email"], capture_output=True, text=True, check=False).stdout.strip()
-            if not global_email:
-                subprocess.run(["git", "config", "--global", "user.email", fallback_email], check=False)
+    # --- Remotes ---
 
     def has_remote(self, remote_name="origin"):
         """Returns True if the specified remote is configured."""
@@ -186,392 +228,382 @@ class GitEngine:
         """Adds a remote repository URL."""
         if not self.is_valid():
             return False, "Not a valid repository"
-        try:
-            res = subprocess.run(
-                ["git", "remote", "add", name, url],
-                cwd=self.root_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
-            if res.returncode == 0:
-                return True, "Remote added"
-            return False, res.stderr.strip()
-        except Exception as e:
-            return False, str(e)
+        res = self._git(["remote", "add", name, url])
+        return (True, "Remote added") if res.ok else (False, res.message)
 
     def set_remote_url(self, name, url):
         """Updates a remote repository URL."""
         if not self.is_valid():
             return False, "Not a valid repository"
-        try:
-            res = subprocess.run(
-                ["git", "remote", "set-url", name, url],
-                cwd=self.root_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
-            return res.returncode == 0, res.stderr.strip()
-        except Exception as e:
-            return False, str(e)
+        res = self._git(["remote", "set-url", name, url])
+        return res.ok, res.err
 
     def has_commits(self):
         """Returns True if HEAD points to a valid commit."""
         if not self.is_valid():
             return False
-        commit = self._run(["rev-parse", "--verify", "HEAD"])
-        return bool(commit and not commit.startswith("fatal"))
+        return self._git(["rev-parse", "--verify", "--quiet", "HEAD"]).ok
 
     def push_initial(self, remote="origin", branch=None, token=None):
-        """Pushes current branch to remote setting upstream tracking."""
+        """Pushes the current branch to remote, setting upstream tracking."""
         if not self.is_valid():
             return False, "Not a valid repository"
-        cur_branch = branch or self.get_current_branch()
-        if not cur_branch or "HEAD" in cur_branch or cur_branch == "no commits":
-            cur_branch = "main"
+        if not branch or "HEAD" in branch or branch == "no commits":
+            branch = self.get_branch_name()
+        if not branch:
+            return False, DETACHED_HEAD_MSG
+        return self._network(["push", "-u", remote, f"{branch}:{branch}"], token, remote).pair()
 
-        origin_url = self._run(["remote", "get-url", remote]).strip()
-        auth_url = None
-        if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_coords(remote)
-            if ":" in token:
-                prefix = token
-            elif owner:
-                prefix = f"{owner}:{token}"
-            else:
-                prefix = f"x-access-token:{token}"
+    def push(self, token=None, remote="origin"):
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        if not self.has_remote(remote):
+            return False, f"No remote '{remote}' configured"
+        branch = self.get_branch_name()
+        if not branch:
+            # Never guess a target branch: pushing a detached HEAD to 'main' rewrites the wrong branch.
+            return False, DETACHED_HEAD_MSG
+        return self._network(["push", "-u", remote, f"{branch}:{branch}"], token, remote).pair()
 
-            if owner and repo:
-                auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
-            elif origin_url.startswith("https://"):
-                clean_base = re.sub(r"https://[^@]+@", "https://", origin_url)
-                auth_url = clean_base.replace("https://", f"https://{prefix}@")
+    def pull(self, token=None, remote="origin"):
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        if not self.has_remote(remote):
+            return False, f"No remote '{remote}' configured"
+        branch = self.get_branch_name()
+        if not branch:
+            return False, DETACHED_HEAD_MSG
+        args = ["pull", "--no-edit"]
+        if not self.get_upstream(branch):
+            args += [remote, branch]
+        return self._network(args, token, remote).pair()
 
-        try:
-            if auth_url:
-                self.set_remote_url(remote, auth_url)
+    def fetch(self, token=None, remote="origin"):
+        if not self.is_valid():
+            return False, "Not a valid repository"
+        if not self.has_remote(remote):
+            return False, f"No remote '{remote}' configured"
+        return self._network(["fetch", "--prune", remote], token, remote).pair()
 
-            env = os.environ.copy()
-            env["GIT_TERMINAL_PROMPT"] = "0"
-            res = subprocess.run(
-                ["git", "-c", "core.quotepath=false", "push", "-u", remote, f"{cur_branch}:{cur_branch}"],
-                cwd=self.root_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-                check=False
-            )
-            if res.returncode != 0:
-                res = subprocess.run(
-                    ["git", "-c", "core.quotepath=false", "push", remote, cur_branch],
-                    cwd=self.root_path,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    env=env,
-                    check=False
-                )
+    def push_tag(self, tag_name, token=None, remote="origin"):
+        if not self.has_remote(remote):
+            return False, f"No remote '{remote}' configured"
+        return self._network(["push", remote, f"refs/tags/{tag_name}"], token, remote).pair()
 
-            return res.returncode == 0, res.stdout.strip() or res.stderr.strip()
-        except Exception as e:
-            return False, str(e)
-        finally:
-            if auth_url:
-                clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
-                self.set_remote_url(remote, clean_url)
+    # --- Branch state ---
+
+    def get_branch_name(self):
+        """Current branch name, or '' when HEAD is detached."""
+        return self._run(["branch", "--show-current"]).strip()
 
     def get_current_branch(self):
-        branch = self._run(["branch", "--show-current"]).strip()
+        """Display name of the current branch ('HEAD (abc1234)' when detached)."""
+        branch = self.get_branch_name()
         if not branch:
-            # Maybe detached HEAD
             commit = self._run(["rev-parse", "--short", "HEAD"]).strip()
             return f"HEAD ({commit})" if commit else "no commits"
         return branch
 
+    def is_detached(self):
+        return self.is_valid() and not self.get_branch_name()
+
+    def get_upstream(self, branch=None):
+        """Upstream of a branch ('origin/main'), or '' when none is set."""
+        branch = branch or self.get_branch_name()
+        if not branch:
+            return ""
+        return self._run(["for-each-ref", "--format=%(upstream:short)", f"refs/heads/{branch}"]).strip()
+
+    def _count_ahead_behind(self, upstream, branch):
+        parts = self._run(["rev-list", "--left-right", "--count", f"{upstream}...refs/heads/{branch}"]).split()
+        if len(parts) == 2 and all(p.isdigit() for p in parts):
+            behind, ahead = int(parts[0]), int(parts[1])
+            return ahead, behind
+        return 0, 0
+
     def get_ahead_behind(self):
-        branch = self.get_current_branch()
-        if not branch or "HEAD" in branch or branch == "no commits":
+        branch = self.get_branch_name()
+        if not branch or not self.has_commits():
             return 0, 0
 
-        # 1. Try standard upstream tracking
-        upstream = self._run(["rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}"]).strip()
-        if upstream and not upstream.startswith("fatal") and upstream != f"{branch}@{{upstream}}":
-            counts = self._run(["rev-list", "--left-right", "--count", f"{upstream}...{branch}"])
-            if counts:
-                parts = counts.split()
-                if len(parts) == 2:
-                    try:
-                        behind, ahead = int(parts[0]), int(parts[1])
-                        return ahead, behind
-                    except ValueError:
-                        pass
+        # 1. Configured upstream, else 2. a same-named branch on origin
+        upstream = self.get_upstream(branch)
+        if not upstream and self.has_remote("origin"):
+            if self._git(["rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"]).ok:
+                upstream = f"origin/{branch}"
+        if upstream:
+            return self._count_ahead_behind(upstream, branch)
 
-        # 2. If no upstream tracking, check if remote origin exists
+        # 3. Branch not on the remote yet: count commits no remote-tracking ref contains
+        args = ["rev-list", "--count", f"refs/heads/{branch}"]
         if self.has_remote("origin"):
-            has_remote_branch = bool(self._run(["rev-parse", "--verify", f"origin/{branch}"]).strip())
-            if has_remote_branch:
-                counts = self._run(["rev-list", "--left-right", "--count", f"origin/{branch}...{branch}"])
-                if counts:
-                    parts = counts.split()
-                    if len(parts) == 2:
-                        try:
-                            behind, ahead = int(parts[0]), int(parts[1])
-                            return ahead, behind
-                        except ValueError:
-                            pass
-            else:
-                # Branch not on remote yet: all local commits are ahead
-                total = self._run(["rev-list", "--count", branch]).strip()
-                if total.isdigit() and int(total) > 0:
-                    return int(total), 0
+            args += ["--not", "--remotes=origin"]
+        total = self._run(args).strip()
+        return (int(total), 0) if total.isdigit() else (0, 0)
 
-        # 3. If no remote exists at all (purely local repository)
-        total = self._run(["rev-list", "--count", branch]).strip()
-        if total.isdigit() and int(total) > 0:
-            return int(total), 0
+    # --- Working tree status ---
 
-        return 0, 0
+    def _numstat(self, cached):
+        """{path: (added, deleted)} for staged (cached=True) or unstaged changes."""
+        args = ["diff", "--numstat", "-z"] + (["--cached"] if cached else [])
+        tokens = self._git(args, strip=False).out.split("\0")
+        stats = {}
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            i += 1
+            parts = tok.split("\t", 2)
+            if len(parts) < 3:
+                continue
+            add = int(parts[0]) if parts[0].isdigit() else 0
+            dels = int(parts[1]) if parts[1].isdigit() else 0
+            path = parts[2]
+            if path == "":
+                # Rename/copy: "<add>\t<del>\t\0<old>\0<new>\0"
+                if i + 1 >= len(tokens):
+                    break
+                path = tokens[i + 1]
+                i += 2
+            stats[path] = (add, dels)
+        return stats
+
+    @staticmethod
+    def _file_item(path, status, stats=None):
+        add, dels = (stats or {}).get(path, (0, 0))
+        return {"path": path, "status": status, "lines_add": add, "lines_del": dels}
 
     def get_status_files(self):
         """
         Returns {
-            'staged': [{'path': ..., 'status': 'M', 'lines_add': 0, 'lines_del': 0}],
-            'unstaged': [...],
-            'untracked': [...]
+            'staged':     [{'path': ..., 'status': 'M', 'lines_add': 0, 'lines_del': 0}],
+            'unstaged':   [...],
+            'untracked':  [...],
+            'conflicted': [{'path': ..., 'status': 'U', 'conflict': 'UU', ...}],
         }
+        Parsed from `git status --porcelain=v2 -z`, so paths with spaces,
+        quotes, non-ASCII characters and renames survive intact.
         """
-        staged = []
-        unstaged = []
-        untracked = []
-
+        result = {"staged": [], "unstaged": [], "untracked": [], "conflicted": []}
         if not self.is_valid():
-            return {"staged": staged, "unstaged": unstaged, "untracked": untracked}
+            return result
 
-        # Get line numbers stat for staged
-        staged_stats = {}
-        cached_numstat = self._run(["diff", "--cached", "--numstat"])
-        if cached_numstat:
-            for line in cached_numstat.splitlines():
-                parts = line.split("\t")
-                if len(parts) >= 3:
-                    add = int(parts[0]) if parts[0].isdigit() else 0
-                    dels = int(parts[1]) if parts[1].isdigit() else 0
-                    p = parts[2].strip()
-                    if p.startswith('"') and p.endswith('"'):
-                        p = p[1:-1]
-                    staged_stats[p] = (add, dels)
+        res = self._git(["status", "--porcelain=v2", "-z", "-uall"], strip=False)
+        if not res.ok:
+            return result
 
-        # Get line numbers stat for unstaged
-        unstaged_stats = {}
-        work_numstat = self._run(["diff", "--numstat"])
-        if work_numstat:
-            for line in work_numstat.splitlines():
-                parts = line.split("\t")
-                if len(parts) >= 3:
-                    add = int(parts[0]) if parts[0].isdigit() else 0
-                    dels = int(parts[1]) if parts[1].isdigit() else 0
-                    p = parts[2].strip()
-                    if p.startswith('"') and p.endswith('"'):
-                        p = p[1:-1]
-                    unstaged_stats[p] = (add, dels)
+        staged_stats = self._numstat(cached=True)
+        unstaged_stats = self._numstat(cached=False)
 
-        # Porcelain v1 status
-        status_out = self._run(["status", "--porcelain=v1", "-uall"])
-        if status_out:
-            for line in status_out.splitlines():
-                if len(line) < 3:
+        tokens = res.out.split("\0")
+        i = 0
+        while i < len(tokens):
+            entry = tokens[i]
+            i += 1
+            if not entry:
+                continue
+            kind = entry[0]
+            if kind == "?":
+                result["untracked"].append(self._file_item(entry[2:], "?"))
+            elif kind in ("1", "2"):
+                # 1 XY sub mH mI mW hH hI path
+                # 2 XY sub mH mI mW hH hI Xscore path\0origPath
+                fields = entry.split(" ", 9 if kind == "2" else 8)
+                if len(fields) < (10 if kind == "2" else 9):
                     continue
-                index_st = line[0]
-                work_st = line[1]
-                path = line[3:].strip()
-                if " -> " in path:
-                    path = path.split(" -> ")[1].strip()
-                if path.startswith('"') and path.endswith('"'):
-                    path = path[1:-1]
-
-                # Untracked
-                if index_st == "?" and work_st == "?":
-                    untracked.append({
-                        "path": path,
-                        "status": "?",
-                        "lines_add": 0,
-                        "lines_del": 0
-                    })
+                xy, path = fields[1], fields[-1]
+                if kind == "2":
+                    i += 1  # skip the original path token
+                if xy[0] != ".":
+                    result["staged"].append(self._file_item(path, xy[0], staged_stats))
+                if xy[1] != ".":
+                    result["unstaged"].append(self._file_item(path, xy[1], unstaged_stats))
+            elif kind == "u":
+                # u XY sub m1 m2 m3 mW h1 h2 h3 path
+                fields = entry.split(" ", 10)
+                if len(fields) < 11:
                     continue
+                item = self._file_item(fields[-1], "U")
+                item["conflict"] = fields[1]
+                result["conflicted"].append(item)
+        return result
 
-                # Staged
-                if index_st in ["M", "A", "D", "R", "C"]:
-                    add, dels = staged_stats.get(path, (0, 0))
-                    staged.append({
-                        "path": path,
-                        "status": index_st,
-                        "lines_add": add,
-                        "lines_del": dels
-                    })
-
-                # Unstaged
-                if work_st in ["M", "D", "T"]:
-                    add, dels = unstaged_stats.get(path, (0, 0))
-                    unstaged.append({
-                        "path": path,
-                        "status": work_st,
-                        "lines_add": add,
-                        "lines_del": dels
-                    })
-
-        return {
-            "staged": staged,
-            "unstaged": unstaged,
-            "untracked": untracked
-        }
+    def has_changes(self, include_untracked=True):
+        """True if the work tree or index has uncommitted changes."""
+        args = ["status", "--porcelain=v2"] + ([] if include_untracked else ["-uno"])
+        return bool(self._run(args).strip())
 
     def stage_file(self, filepath):
-        res = subprocess.run(["git", "add", "--", filepath], cwd=self.root_path, capture_output=True, check=False)
-        return res.returncode == 0
+        return self._git(["add", "--", filepath], timeout=LONG_TIMEOUT).ok
 
     def unstage_file(self, filepath):
-        res = subprocess.run(["git", "restore", "--staged", "--", filepath], cwd=self.root_path, capture_output=True, check=False)
-        if res.returncode != 0:
-            res = subprocess.run(["git", "reset", "HEAD", "--", filepath], cwd=self.root_path, capture_output=True, check=False)
-        return res.returncode == 0
+        if self._git(["restore", "--staged", "--", filepath]).ok:
+            return True
+        if not self.has_commits():
+            # No HEAD yet: drop the path from the index instead
+            return self._git(["rm", "--cached", "--quiet", "--", filepath]).ok
+        return self._git(["reset", "-q", "HEAD", "--", filepath]).ok
 
     def stage_all(self):
-        res = subprocess.run(["git", "add", "-A"], cwd=self.root_path, capture_output=True, check=False)
-        return res.returncode == 0
+        return self._git(["add", "-A"], timeout=LONG_TIMEOUT).ok
 
     def unstage_all(self):
-        res = subprocess.run(["git", "reset"], cwd=self.root_path, capture_output=True, check=False)
-        return res.returncode == 0
+        if not self.has_commits():
+            return self._git(["rm", "-r", "--cached", "--quiet", "."]).ok
+        return self._git(["reset", "-q"]).ok
 
     def commit(self, message):
-        res = subprocess.run(["git", "commit", "-m", message], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+        # Hooks (pre-commit, lint) may run here, hence the long timeout
+        return self._git(["commit", "-m", message], timeout=LONG_TIMEOUT).pair()
 
-    def push(self, token=None):
-        if not self.is_valid():
-            return False, "Not a valid repository"
-        branch = self.get_current_branch()
-        if not branch or "HEAD" in branch or branch == "no commits":
-            branch = "main"
+    # --- Branches ---
 
-        if not self.has_remote("origin"):
-            return False, "No remote 'origin' configured"
+    _BRANCH_FORMAT = "%00".join([
+        "%(refname)", "%(HEAD)", "%(upstream:short)", "%(upstream:track,nobracket)",
+        "%(committerdate:relative)", "%(symref)", "%(subject)",
+    ])
 
-        origin_url = self._run(["remote", "get-url", "origin"]).strip()
-        auth_url = None
-        if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_coords("origin")
-            if ":" in token:
-                prefix = token
-            elif owner:
-                prefix = f"{owner}:{token}"
-            else:
-                prefix = f"x-access-token:{token}"
-
-            if owner and repo:
-                auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
-            elif origin_url.startswith("https://"):
-                clean_base = re.sub(r"https://[^@]+@", "https://", origin_url)
-                auth_url = clean_base.replace("https://", f"https://{prefix}@")
-
-        try:
-            if auth_url:
-                self.set_remote_url("origin", auth_url)
-
-            env = os.environ.copy()
-            env["GIT_TERMINAL_PROMPT"] = "0"
-            res = subprocess.run(
-                ["git", "-c", "core.quotepath=false", "push", "-u", "origin", f"{branch}:{branch}"],
-                cwd=self.root_path,
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False
-            )
-            if res.returncode != 0:
-                res = subprocess.run(
-                    ["git", "-c", "core.quotepath=false", "push", "origin", branch],
-                    cwd=self.root_path,
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                    check=False
-                )
-
-            return res.returncode == 0, res.stdout or res.stderr
-        finally:
-            if auth_url:
-                clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
-                self.set_remote_url("origin", clean_url)
-
-    def pull(self, token=None):
-        if not self.is_valid():
-            return False, "Not a valid repository"
-        if not self.has_remote("origin"):
-            return False, "No remote 'origin' configured"
-
-        origin_url = self._run(["remote", "get-url", "origin"]).strip()
-        auth_url = None
-        if token and (origin_url.startswith("https://") or not origin_url):
-            owner, repo = self.get_github_coords("origin")
-            if ":" in token:
-                prefix = token
-            elif owner:
-                prefix = f"{owner}:{token}"
-            else:
-                prefix = f"x-access-token:{token}"
-
-            if owner and repo:
-                auth_url = f"https://{prefix}@github.com/{owner}/{repo}.git"
-            elif origin_url.startswith("https://"):
-                clean_base = re.sub(r"https://[^@]+@", "https://", origin_url)
-                auth_url = clean_base.replace("https://", f"https://{prefix}@")
-
-        try:
-            if auth_url:
-                self.set_remote_url("origin", auth_url)
-
-            env = os.environ.copy()
-            env["GIT_TERMINAL_PROMPT"] = "0"
-            res = subprocess.run(["git", "pull"], cwd=self.root_path, capture_output=True, text=True, env=env, check=False)
-            return res.returncode == 0, res.stdout or res.stderr
-        finally:
-            if auth_url:
-                clean_url = re.sub(r"https://[^@]+@", "https://", auth_url)
-                self.set_remote_url("origin", clean_url)
+    @staticmethod
+    def _parse_track(track):
+        ahead = re.search(r"ahead (\d+)", track or "")
+        behind = re.search(r"behind (\d+)", track or "")
+        return (
+            int(ahead.group(1)) if ahead else 0,
+            int(behind.group(1)) if behind else 0,
+            (track or "").strip() == "gone",
+        )
 
     def list_branches(self):
-        out = self._run(["branch", "--list", "--format=%(refname:short)"])
-        if out:
-            return [b.strip() for b in out.splitlines() if b.strip()]
-        return []
+        out = self._run(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+        return [b.strip() for b in out.splitlines() if b.strip()]
+
+    def list_branches_detailed(self, include_remote=True):
+        """
+        Local branches (most recently committed first), then remote branches.
+        Local:  {'name', 'kind': 'local', 'current', 'upstream', 'ahead', 'behind', 'gone', 'date', 'subject'}
+        Remote: {'name': 'origin/x', 'kind': 'remote', 'remote', 'branch', 'has_local', 'current': False, 'date', 'subject'}
+        """
+        refs = ["refs/heads"] + (["refs/remotes"] if include_remote else [])
+        out = self._run(["for-each-ref", "--sort=-committerdate", f"--format={self._BRANCH_FORMAT}"] + refs)
+        local, remote = [], []
+        for line in out.splitlines():
+            fields = line.split("\0")
+            if len(fields) < 7:
+                continue
+            refname, head, upstream, track, date, symref, subject = fields[:7]
+            if symref:
+                continue  # origin/HEAD -> origin/main
+            if refname.startswith("refs/heads/"):
+                ahead, behind, gone = self._parse_track(track)
+                local.append({
+                    "name": refname[len("refs/heads/"):],
+                    "kind": "local",
+                    "current": head == "*",
+                    "upstream": upstream,
+                    "ahead": ahead,
+                    "behind": behind,
+                    "gone": gone,
+                    "date": date,
+                    "subject": subject,
+                })
+            elif refname.startswith("refs/remotes/"):
+                short = refname[len("refs/remotes/"):]
+                remote_name, _, branch = short.partition("/")
+                remote.append({
+                    "name": short,
+                    "kind": "remote",
+                    "remote": remote_name,
+                    "branch": branch,
+                    "current": False,
+                    "date": date,
+                    "subject": subject,
+                })
+
+        local_names = {b["name"] for b in local}
+        tracked = {b["upstream"] for b in local if b["upstream"]}
+        for rb in remote:
+            rb["has_local"] = rb["branch"] in local_names or rb["name"] in tracked
+        return local + remote
+
+    def is_valid_branch_name(self, name):
+        name = (name or "").strip()
+        if not name or name.startswith("-") or name == "HEAD":
+            return False
+        return self._git(["check-ref-format", "--branch", name]).ok
+
+    def branch_exists(self, name):
+        return self._git(["rev-parse", "--verify", "--quiet", f"refs/heads/{name}"]).ok
 
     def checkout_branch(self, branch_name):
-        res = subprocess.run(["git", "checkout", branch_name], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stderr or res.stdout
+        """Switches to an existing local branch."""
+        return self._git(["switch", branch_name], timeout=LONG_TIMEOUT).pair()
 
-    def stash_save(self, message="GitPulse quick stash"):
-        res = subprocess.run(["git", "stash", "push", "-m", message], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+    def checkout_remote_branch(self, remote_ref):
+        """Switches to a remote branch ('origin/feature'), creating a tracking local branch if needed."""
+        _, _, local_name = remote_ref.partition("/")
+        if not local_name:
+            return False, f"Not a remote branch: {remote_ref}"
+        if self.branch_exists(local_name):
+            return self.checkout_branch(local_name)
+        return self._git(["switch", "-c", local_name, "--track", remote_ref], timeout=LONG_TIMEOUT).pair()
+
+    def create_branch(self, name, start_point=None, checkout=True):
+        name = (name or "").strip()
+        if not self.is_valid_branch_name(name):
+            return False, f"Invalid branch name: '{name}'"
+        if self.branch_exists(name):
+            return False, f"Branch '{name}' already exists"
+        if checkout:
+            args = ["switch", "-c", name]
+        else:
+            args = ["branch", name]
+        if start_point:
+            args.append(start_point)
+        return self._git(args, timeout=LONG_TIMEOUT).pair()
+
+    def rename_branch(self, old_name, new_name):
+        new_name = (new_name or "").strip()
+        if not self.is_valid_branch_name(new_name):
+            return False, f"Invalid branch name: '{new_name}'"
+        if self.branch_exists(new_name):
+            return False, f"Branch '{new_name}' already exists"
+        return self._git(["branch", "-m", old_name, new_name]).pair()
+
+    def unmerged_commit_count(self, branch_name):
+        """Commits on branch_name that the current HEAD does not contain."""
+        out = self._run(["rev-list", "--count", f"HEAD..refs/heads/{branch_name}"]).strip()
+        return int(out) if out.isdigit() else 0
+
+    def delete_branch(self, branch_name, force=False):
+        if branch_name == self.get_branch_name():
+            return False, f"Cannot delete the current branch '{branch_name}'"
+        return self._git(["branch", "-D" if force else "-d", branch_name]).pair()
+
+    def merge_branch(self, branch_name):
+        return self._git(["merge", "--no-edit", branch_name], timeout=LONG_TIMEOUT).pair()
+
+    def is_merging(self):
+        return self._git(["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]).ok
+
+    def merge_abort(self):
+        return self._git(["merge", "--abort"], timeout=LONG_TIMEOUT).pair()
+
+    # --- Stash ---
+
+    def stash_save(self, message="GitPulse quick stash", include_untracked=False):
+        args = ["stash", "push"] + (["--include-untracked"] if include_untracked else []) + ["-m", message]
+        return self._git(args, timeout=LONG_TIMEOUT).pair()
 
     def stash_pop(self, index=None):
-        cmd = ["git", "stash", "pop"]
+        args = ["stash", "pop"]
         if index is not None:
-            cmd.append(f"stash@{{{index}}}")
-        res = subprocess.run(cmd, cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+            args.append(f"stash@{{{index}}}")
+        return self._git(args, timeout=LONG_TIMEOUT).pair()
 
     def stash_apply(self, index=0):
-        res = subprocess.run(["git", "stash", "apply", f"stash@{{{index}}}"], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+        return self._git(["stash", "apply", f"stash@{{{index}}}"], timeout=LONG_TIMEOUT).pair()
 
     def stash_drop(self, index=0):
-        res = subprocess.run(["git", "stash", "drop", f"stash@{{{index}}}"], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+        return self._git(["stash", "drop", f"stash@{{{index}}}"]).pair()
 
     def stash_diff(self, index=0):
         out = self._run(["stash", "show", "-p", f"stash@{{{index}}}"])
@@ -604,21 +636,7 @@ class GitEngine:
         out = self._run(["stash", "list"])
         return len(out.splitlines()) if out else 0
 
-    def list_branches_detailed(self):
-        """Returns list of branches with current flag."""
-        current = self.get_current_branch()
-        branches = self.list_branches()
-        result = []
-        for b in branches:
-            result.append({
-                "name": b,
-                "current": (b == current)
-            })
-        return result
-
-    def merge_branch(self, branch_name):
-        res = subprocess.run(["git", "merge", branch_name], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+    # --- Tags & changelog ---
 
     def get_latest_tag(self):
         out = self._run(["describe", "--tags", "--abbrev=0"])
@@ -667,8 +685,7 @@ class GitEngine:
 
     def create_tag(self, tag_name, message=""):
         msg = message.strip() or f"Release {tag_name}"
-        res = subprocess.run(["git", "tag", "-a", tag_name, "-m", msg], cwd=self.root_path, capture_output=True, text=True, check=False)
-        return res.returncode == 0, res.stdout or res.stderr
+        return self._git(["tag", "-a", tag_name, "-m", msg]).pair()
 
     def get_commit_graph(self, limit=40):
         """Returns commits with track column and branch metadata."""
@@ -750,14 +767,8 @@ class GitEngine:
         if not diff and not staged and self.root_path:
             full_p = os.path.join(self.root_path, filepath)
             if os.path.exists(full_p) and not os.path.isdir(full_p):
-                res = subprocess.run(
-                    ["git", "-c", "core.quotepath=false", "diff", "--no-index", "/dev/null", filepath],
-                    cwd=self.root_path,
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-                return res.stdout.rstrip("\r\n")
+                # Untracked file: diff against nothing (exit code 1 is expected here)
+                return self._git(["diff", "--no-index", "--", "/dev/null", filepath]).out
         return diff
 
     # --- Pulse & Analytics Methods ---
