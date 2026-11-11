@@ -111,6 +111,74 @@ class StatusTests(RepoTestCase):
         self.assertEqual([x["path"] for x in g.get_status_files()["untracked"]], ["a.txt"])
 
 
+class CommitToolsTests(RepoTestCase):
+    def head_subject(self):
+        return sh(self.root, "log", "-1", "--format=%s").strip()
+
+    def test_commit_with_body(self):
+        write(self.root, "a.txt", "a\n")
+        self.git.stage_all()
+        ok, msg = self.git.commit("feat: a", body="line one\nline two")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.git.get_last_commit_message(), ("feat: a", "line one\nline two"))
+
+    def test_empty_message_rejected(self):
+        write(self.root, "a.txt", "a\n")
+        self.git.stage_all()
+        self.assertFalse(self.git.commit("   ")[0])
+
+    def test_amend_adds_staged_file_and_keeps_message(self):
+        count = sh(self.root, "rev-list", "--count", "HEAD").strip()
+        write(self.root, "forgot.txt", "x\n")
+        self.git.stage_all()
+        ok, msg = self.git.commit("", amend=True)
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.head_subject(), "init")
+        self.assertEqual(sh(self.root, "rev-list", "--count", "HEAD").strip(), count)
+        self.assertIn("forgot.txt", sh(self.root, "show", "--name-only", "--format=", "HEAD"))
+
+    def test_reword_head_ignores_index(self):
+        sh(self.root, "commit", "-q", "--amend", "-m", "old subject", "-m", "kept body")
+        write(self.root, "staged.txt", "s\n")
+        self.git.stage_file("staged.txt")
+        ok, msg = self.git.reword_head("new subject")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.git.get_last_commit_message(), ("new subject", "kept body"))
+        self.assertEqual([x["path"] for x in self.git.get_status_files()["staged"]], ["staged.txt"])
+
+    def test_is_head_pushed(self):
+        self.assertFalse(self.git.is_head_pushed())
+        remote = tempfile.TemporaryDirectory()
+        self.addCleanup(remote.cleanup)
+        sh(remote.name, "init", "-q", "--bare", "-b", "main")
+        sh(self.root, "remote", "add", "origin", remote.name)
+        self.git.push()
+        self.assertTrue(self.git.is_head_pushed())
+
+    def test_discard_tracked_and_untracked(self):
+        write(self.root, "base.txt", "changed\n")
+        write(self.root, "junk file.txt", "junk\n")
+        self.assertTrue(self.git.discard_file("base.txt")[0])
+        self.assertTrue(self.git.discard_file("junk file.txt", untracked=True)[0])
+        st = self.git.get_status_files()
+        self.assertEqual(st["unstaged"] + st["untracked"], [])
+        with open(os.path.join(self.root, "base.txt"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "base\n")
+
+    def test_discard_keeps_staged_version(self):
+        write(self.root, "base.txt", "staged\n")
+        self.git.stage_file("base.txt")
+        write(self.root, "base.txt", "staged\nplus worktree\n")
+        self.git.discard_file("base.txt")
+        with open(os.path.join(self.root, "base.txt"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "staged\n")
+
+    def test_show_commit(self):
+        out = self.git.show_commit("HEAD")
+        self.assertIn("init", out)
+        self.assertIn("+base", out)
+
+
 class BranchTests(RepoTestCase):
     def test_create_switch_rename_delete(self):
         ok, msg = self.git.create_branch("feature/login")

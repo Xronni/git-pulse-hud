@@ -470,9 +470,56 @@ class GitEngine:
             return self._git(["rm", "-r", "--cached", "--quiet", "."]).ok
         return self._git(["reset", "-q"]).ok
 
-    def commit(self, message):
+    def commit(self, message, body=None, amend=False):
+        """Commits the index. With amend=True and no message, keeps the previous message."""
+        args = ["commit"]
+        if amend:
+            args.append("--amend")
+        message = (message or "").strip()
+        if message:
+            args += ["-m", message]
+            if body and body.strip():
+                args += ["-m", body.strip()]
+        elif amend:
+            args.append("--no-edit")
+        else:
+            return False, "Empty commit message"
         # Hooks (pre-commit, lint) may run here, hence the long timeout
-        return self._git(["commit", "-m", message], timeout=LONG_TIMEOUT).pair()
+        return self._git(args, timeout=LONG_TIMEOUT).pair()
+
+    def get_last_commit_message(self):
+        """(subject, body) of HEAD, or ('', '') when there are no commits."""
+        if not self.has_commits():
+            return "", ""
+        msg = self._git(["log", "-1", "--format=%B"]).out.strip()
+        subject, _, body = msg.partition("\n")
+        return subject.strip(), body.strip()
+
+    def reword_head(self, subject):
+        """Changes the subject line of HEAD, keeping its body and ignoring the index."""
+        subject = (subject or "").strip()
+        if not subject:
+            return False, "Empty commit message"
+        _, body = self.get_last_commit_message()
+        args = ["commit", "--amend", "--only", "--allow-empty", "-m", subject]
+        if body:
+            args += ["-m", body]
+        return self._git(args, timeout=LONG_TIMEOUT).pair()
+
+    def is_head_pushed(self):
+        """True if HEAD is already contained in some remote-tracking branch."""
+        return bool(self._run(["branch", "-r", "--contains", "HEAD"]).strip())
+
+    def discard_file(self, filepath, untracked=False):
+        """Throws away work-tree changes of one file (untracked: deletes it)."""
+        if untracked:
+            return self._git(["clean", "-f", "-q", "--", filepath]).pair()
+        return self._git(["restore", "--worktree", "--", filepath], timeout=LONG_TIMEOUT).pair()
+
+    def show_commit(self, commit_hash):
+        """Header, stat and patch of one commit for the diff viewer."""
+        res = self._git(["show", "--stat", "--patch", "--format=fuller", "--no-color", commit_hash], timeout=LONG_TIMEOUT)
+        return res.out if res.ok else res.message
 
     # --- Branches ---
 

@@ -43,6 +43,12 @@
   * Sidebar sync row: **Fetch**, **Pull (↓N)** and **Push (↑N)** are always one click away.
   * Background fetch every 5 minutes (`auto_fetch_minutes` in `~/.config/git-pulse/config.json`, `0` disables).
   * The views refresh by themselves when files, the index or HEAD change outside the app (editor, terminal).
+* 🧰 **Commit Tools:**
+  * Discard changes of a single file (↶), with confirmation.
+  * **Amend** the last commit (warns if it is already pushed) and edit the last commit message from the history (✎).
+  * Optional multi-line commit description.
+  * Click any commit in the history to see its full diff.
+* ⌨️ **Keyboard:** `Ctrl+Enter` commit, `Ctrl+Shift+Enter` commit & push, `Ctrl+P` push, `Ctrl+Shift+P` pull, `Ctrl+Shift+F` fetch, `Ctrl+B` branches, `Ctrl+K` repositories, `Ctrl+1…4` tabs, `F5` / `Ctrl+R` refresh — on any keyboard layout.
 * 📦 **Git Stash Shelf & Inspector:**
   * Dedicated split-view modal dialog displaying all stored stashes with relative timestamps and messages.
   * Real-time syntax-colored diff preview (`+green`, `-red`).
@@ -168,6 +174,12 @@ git-pulse-hud/
   * Ряд синхронизации в сайдбаре: **Fetch**, **Pull (↓N)** и **Push (↑N)** всегда в один клик.
   * Фоновый fetch каждые 5 минут (`auto_fetch_minutes` в `~/.config/git-pulse/config.json`, `0` — выключить).
   * Экраны обновляются сами, когда файлы, индекс или HEAD меняются вне приложения (редактор, терминал).
+* 🧰 **Работа с коммитами:**
+  * Отмена изменений в отдельном файле (↶) с подтверждением.
+  * **Amend** последнего коммита (с предупреждением, если он уже отправлен) и правка сообщения последнего коммита из истории (✎).
+  * Необязательное многострочное описание коммита.
+  * Клик по коммиту в истории открывает его полный diff.
+* ⌨️ **Клавиатура:** `Ctrl+Enter` — коммит, `Ctrl+Shift+Enter` — коммит и отправка, `Ctrl+P` — push, `Ctrl+Shift+P` — pull, `Ctrl+Shift+F` — fetch, `Ctrl+B` — ветки, `Ctrl+K` — репозитории, `Ctrl+1…4` — вкладки, `F5` / `Ctrl+R` — обновить. Работает в любой раскладке.
 * 📦 **Полка и инспектор Git Stash:**
   * Отдельное окно управления тайниками с датами и сообщениями.
   * Моментальный предпросмотр diff каждого тайника с синтаксической подсветкой.

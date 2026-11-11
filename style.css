@@ -675,3 +675,22 @@ button.sync-btn.sync-attn {
     border-color: rgba(129, 140, 248, 0.45);
     color: #c7d2fe;
 }
+
+/* Commit body & history rows */
+.commit-body-box {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+
+textview.commit-body-text,
+textview.commit-body-text text {
+    background: transparent;
+    color: #e2e8f0;
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+.history-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+}

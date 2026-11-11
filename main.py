@@ -6,6 +6,7 @@ Author: Xronni (https://github.com/Xronni)
 
 import sys
 import os
+import re
 import json
 import threading
 from datetime import datetime
@@ -29,6 +30,7 @@ from release_dialog import ReleaseDrafterDialog
 from quick_switcher import QuickSwitcherDialog
 from branch_switcher import BranchSwitcherPopover
 from window_sync import SyncMixin
+from ui_dialogs import show_choice_dialog
 import i18n
 from i18n import t
 
@@ -94,6 +96,7 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
 
         # Global key controller (Ctrl+K for Quick Switcher)
         key_ctl = Gtk.EventControllerKey()
+        key_ctl.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key_ctl.connect("key-pressed", self._on_global_key_pressed)
         self.add_controller(key_ctl)
 
@@ -320,6 +323,7 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             if nav_id == "changes":
                 btn.add_css_class("active")
             btn.connect("clicked", lambda b, nid=nav_id: self._switch_nav(nid))
+            btn.set_tooltip_text(f"Ctrl+{len(self.nav_buttons) + 1}")
             sidebar.append(btn)
             self.nav_buttons[nav_id] = (btn, lbl, trans_key)
 
@@ -457,6 +461,11 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         self.check_breaking.connect("toggled", lambda *a: self._update_commit_preview())
         types_row.append(self.check_breaking)
 
+        self.check_amend = Gtk.CheckButton(label=t("amend_last"))
+        self.check_amend.set_tooltip_text(t("amend_tooltip"))
+        self.check_amend.connect("toggled", self._on_amend_toggled)
+        types_row.append(self.check_amend)
+
         self.commit_card.append(types_row)
 
         input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -473,7 +482,24 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         self.entry_desc.connect("activate", lambda *a: self._on_commit())
         input_row.append(self.entry_desc)
 
+        self.btn_body_toggle = Gtk.ToggleButton(icon_name="format-justify-left-symbolic", css_classes=["subtle-icon-btn"])
+        self.btn_body_toggle.set_tooltip_text(t("commit_body_toggle"))
+        self.btn_body_toggle.connect("toggled", lambda b: self._set_body_visible(b.get_active()))
+        input_row.append(self.btn_body_toggle)
+
         self.commit_card.append(input_row)
+
+        # Optional multi-line commit body
+        self.body_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
+        body_scroll = Gtk.ScrolledWindow(min_content_height=64, max_content_height=120, propagate_natural_height=True)
+        body_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        body_scroll.add_css_class("commit-body-box")
+        self.text_body = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
+        self.text_body.add_css_class("commit-body-text")
+        self.text_body.set_tooltip_text(t("commit_body_placeholder"))
+        body_scroll.set_child(self.text_body)
+        self.body_revealer.set_child(body_scroll)
+        self.commit_card.append(self.body_revealer)
 
         bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.preview_lbl = Gtk.Label(label="feat: ...")
@@ -489,11 +515,13 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         bottom_row.append(self.scanner_status_pill)
 
         self.btn_commit = Gtk.Button(label=t("btn_commit"))
+        self.btn_commit.set_tooltip_text("Ctrl+Enter")
         self.btn_commit.add_css_class("subtle-btn")
         self.btn_commit.connect("clicked", lambda b: self._on_commit(push=False))
         bottom_row.append(self.btn_commit)
 
         self.btn_commit_push = Gtk.Button(label=t("btn_commit_push"))
+        self.btn_commit_push.set_tooltip_text("Ctrl+Shift+Enter")
         self.btn_commit_push.add_css_class("primary-btn")
         self.btn_commit_push.connect("clicked", lambda b: self._on_commit(push=True))
         bottom_row.append(self.btn_commit_push)
@@ -514,6 +542,11 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         self._update_commit_preview()
 
     def _update_commit_preview(self):
+        if getattr(self, "check_amend", None) and self.check_amend.get_active() and not self.entry_desc.get_text().strip():
+            # Amend without a new description keeps the previous message
+            subject, _ = self.git.get_last_commit_message()
+            self.preview_lbl.set_text(f"↺ {subject}")
+            return
         scope = self.entry_scope.get_text().strip()
         desc = self.entry_desc.get_text().strip() or "..."
         breaking = "!" if self.check_breaking.get_active() else ""
@@ -599,9 +632,15 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             self.history_container.append(box)
             return
 
-        for c in commits:
+        for idx, c in enumerate(commits):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.add_css_class("file-item-row")
+            row.add_css_class("history-row")
+            row.set_tooltip_text(t("history_row_tooltip"))
+            row_click = Gtk.GestureClick()
+            row_click.connect("released", lambda g, n, x, y, r=row, h=c["hash"], m=c["message"]:
+                              self._on_history_row_clicked(r, x, y, h, m))
+            row.add_controller(row_click)
 
             # Cairo Branch Graph Node
             graph_node = BranchGraphNodeWidget(
@@ -634,6 +673,12 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             date_lbl = Gtk.Label(label=i18n.format_relative_time(c["relative_date"]))
             date_lbl.add_css_class("stat-label")
             row.append(date_lbl)
+
+            if idx == 0 and not self.git.is_detached():
+                btn_reword = Gtk.Button(icon_name="document-edit-symbolic", css_classes=["subtle-icon-btn"])
+                btn_reword.set_tooltip_text(t("reword_tooltip"))
+                btn_reword.connect("clicked", lambda b: self._on_reword_head())
+                row.append(btn_reword)
 
             self.history_container.append(row)
 
@@ -1188,7 +1233,7 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             return
 
         self.commit_card.set_visible(True)
-        can_commit = len(staged) > 0
+        can_commit = len(staged) > 0 or self.check_amend.get_active()
         has_origin = self.git.has_remote("origin")
         self.btn_commit.set_sensitive(can_commit)
         self.btn_commit_push.set_sensitive(can_commit)
@@ -1418,6 +1463,12 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
                 stat_box.append(Gtk.Label(label=f"-{dels}", css_classes=["line-del"]))
             row.append(stat_box)
 
+        if not is_staged and st_char != "U":
+            btn_discard = Gtk.Button(icon_name="edit-undo-symbolic", css_classes=["subtle-icon-btn"])
+            btn_discard.set_tooltip_text(t("discard_tooltip"))
+            btn_discard.connect("clicked", lambda b, fp=filepath, untracked=(st_char == "?"): self._on_discard_file(fp, untracked))
+            row.append(btn_discard)
+
         btn_diff = Gtk.Button()
         btn_diff.set_icon_name("edit-find-symbolic")
         btn_diff.set_tooltip_text(t("view_diff"))
@@ -1426,6 +1477,25 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         row.append(btn_diff)
 
         self.files_container.append(row)
+
+    def _on_discard_file(self, filepath, untracked):
+        desc = (t("discard_desc_untracked") if untracked else t("discard_desc")).format(path=filepath)
+
+        def on_choice(choice, _value):
+            if choice != "discard":
+                return
+            ok, out = self.git.discard_file(filepath, untracked=untracked)
+            if ok:
+                self.sound.play("pop")
+                self._toast(t("discard_done").format(path=os.path.basename(filepath)))
+            else:
+                self.sound.play("error")
+                self._show_error_dialog(t("discard_title"), out)
+            self._load_repo_data()
+
+        show_choice_dialog(self, t("discard_title"), desc,
+                           [("cancel", t("cancel"), "subtle"), ("discard", t("discard_btn"), "destructive")],
+                           on_choice)
 
     def _toggle_stage_file(self, filepath, currently_staged):
         if currently_staged:
@@ -1458,34 +1528,89 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         )
         dlg.present()
 
-    def _on_commit(self, push=False):
+    def _commit_header(self):
         desc = self.entry_desc.get_text().strip()
         if not desc:
-            self.sound.play("error")
-            return
-
-        if self.last_scan_findings:
-            self._show_secret_warning_dialog(on_confirm=lambda: self._execute_commit(push=push))
-            return
-
-        self._execute_commit(push=push)
-
-    def _execute_commit(self, push=False):
-        desc = self.entry_desc.get_text().strip()
-        if not desc:
-            return
-
+            return ""
         scope = self.entry_scope.get_text().strip()
         breaking = "!" if self.check_breaking.get_active() else ""
         if scope:
-            msg = f"{self.selected_type}({scope}){breaking}: {desc}"
-        else:
-            msg = f"{self.selected_type}{breaking}: {desc}"
+            return f"{self.selected_type}({scope}){breaking}: {desc}"
+        return f"{self.selected_type}{breaking}: {desc}"
 
-        ok, out = self.git.commit(msg)
+    def _commit_body(self):
+        buf = self.text_body.get_buffer()
+        return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False).strip()
+
+    def _set_body_visible(self, visible):
+        self.body_revealer.set_reveal_child(visible)
+        if self.btn_body_toggle.get_active() != visible:
+            self.btn_body_toggle.set_active(visible)
+        if visible:
+            self.text_body.grab_focus()
+
+    def _on_amend_toggled(self, check):
+        if check.get_active() and not self.entry_desc.get_text().strip():
+            self._fill_composer_from_head()
+        if not check.get_active():
+            self.entry_desc.set_placeholder_text(t("commit_desc_placeholder"))
+        self._update_commit_preview()
+        if hasattr(self, "files_container") and self.git.is_valid():
+            # Re-evaluate whether the commit buttons are enabled
+            staged = bool(self.git.get_status_files()["staged"])
+            self.btn_commit.set_sensitive(staged or check.get_active())
+            self.btn_commit_push.set_sensitive(staged or check.get_active())
+
+    def _fill_composer_from_head(self):
+        """Pre-fills type/scope/breaking/description/body from the last commit (for amend)."""
+        subject, body = self.git.get_last_commit_message()
+        m = re.match(r"^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.*)$", subject)
+        if not (m and m.group(1) in self.type_chips):
+            # Not a Conventional Commit (e.g. a merge): keep the message unless the user types a new one
+            self.entry_desc.set_placeholder_text(t("amend_keep_message"))
+            return
+        self._select_type(m.group(1))
+        self.entry_scope.set_text(m.group(2) or "")
+        self.check_breaking.set_active(bool(m.group(3)))
+        self.entry_desc.set_text(m.group(4))
+        self.text_body.get_buffer().set_text(body)
+        if body:
+            self._set_body_visible(True)
+
+    def _on_commit(self, push=False):
+        amend = self.check_amend.get_active()
+        if not self.entry_desc.get_text().strip() and not amend:
+            self.sound.play("error")
+            return
+
+        def _proceed():
+            if self.last_scan_findings:
+                self._show_secret_warning_dialog(on_confirm=lambda: self._execute_commit(push=push))
+            else:
+                self._execute_commit(push=push)
+
+        if amend and self.git.is_head_pushed():
+            show_choice_dialog(
+                self, t("amend_pushed_title"), t("amend_pushed_desc"),
+                [("cancel", t("cancel"), "subtle"), ("amend", t("amend_btn"), "destructive")],
+                lambda choice, _v: _proceed() if choice == "amend" else None)
+            return
+        _proceed()
+
+    def _execute_commit(self, push=False):
+        amend = self.check_amend.get_active()
+        header = self._commit_header()
+        if not header and not amend:
+            return
+
+        ok, out = self.git.commit(header, body=self._commit_body(), amend=amend)
         if ok:
             self.sound.play("commit")
             self.entry_desc.set_text("")
+            self.text_body.get_buffer().set_text("")
+            self._set_body_visible(False)
+            self.check_amend.set_active(False)
+            self._toast(t("amend_done") if amend else t("commit_done"))
             self._load_repo_data()
             if push:
                 if not self.git.has_remote("origin"):
@@ -1630,19 +1755,52 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
 
     # --- GLOBAL ACTIONS & MODALS ---
 
+    def _latin_keyval(self, keyval, keycode, state):
+        """Maps a key to the first (Latin) layout so Ctrl+K works on a Russian layout too."""
+        code = Gdk.keyval_to_unicode(keyval)
+        if not code or chr(code).isascii():
+            return keyval
+        display = self.get_display()
+        for group in range(4):  # layouts may be ordered "ru,us" as well as "us,ru"
+            ok, latin, *_ = display.translate_key(keycode, state, group)
+            latin_code = Gdk.keyval_to_unicode(latin) if ok else 0
+            if latin_code and chr(latin_code).isascii():
+                return latin
+        return keyval
+
     def _on_global_key_pressed(self, controller, keyval, keycode, state):
-        is_ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
-        if is_ctrl:
-            if keyval in (
-                Gdk.KEY_k, Gdk.KEY_K,
-                Gdk.KEY_Cyrillic_el, Gdk.KEY_Cyrillic_EL,
-                Gdk.KEY_Cyrillic_ka, Gdk.KEY_Cyrillic_KA
-            ):
-                self._on_open_quick_switcher()
+        mods = state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.ALT_MASK)
+        ctrl = bool(mods & Gdk.ModifierType.CONTROL_MASK)
+        shift = bool(mods & Gdk.ModifierType.SHIFT_MASK)
+        key = Gdk.keyval_to_lower(self._latin_keyval(keyval, keycode, state))
+
+        if key == Gdk.KEY_F5 and not ctrl:
+            self._on_refresh_clicked()
+            return True
+        if not ctrl or (mods & Gdk.ModifierType.ALT_MASK):
+            return False
+
+        if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            if self.active_view == "changes" and self.commit_card.get_visible() and self.btn_commit.get_sensitive():
+                self._on_commit(push=shift)
                 return True
-            if keyval in (Gdk.KEY_b, Gdk.KEY_B, Gdk.KEY_Cyrillic_i, Gdk.KEY_Cyrillic_I):
-                self._on_branch_switcher_clicked(self.sidebar_branch)
-                return True
+            return False
+        actions = {
+            (Gdk.KEY_k, False): self._on_open_quick_switcher,
+            (Gdk.KEY_b, False): lambda: self._on_branch_switcher_clicked(self.sidebar_branch),
+            (Gdk.KEY_r, False): self._on_refresh_clicked,
+            (Gdk.KEY_p, False): self._do_push,
+            (Gdk.KEY_p, True): self._do_pull,
+            (Gdk.KEY_f, True): lambda: self._do_fetch(silent=False),
+            (Gdk.KEY_1, False): lambda: self._switch_nav("changes"),
+            (Gdk.KEY_2, False): lambda: self._switch_nav("history"),
+            (Gdk.KEY_3, False): lambda: self._switch_nav("pulse"),
+            (Gdk.KEY_4, False): lambda: self._switch_nav("telemetry"),
+        }
+        action = actions.get((key, shift))
+        if action:
+            action()
+            return True
         return False
 
     def _on_open_quick_switcher(self):
@@ -1681,14 +1839,54 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         else:
             self.sound.play("error")
 
-    def _on_repo_card_clicked(self, card, x, y):
-        # Buttons inside the card (branch badge, open folder) handle their own clicks
-        widget = card.pick(x, y, Gtk.PickFlags.DEFAULT)
-        while widget is not None and widget is not card:
+    @staticmethod
+    def _click_hits_button(container, x, y):
+        widget = container.pick(x, y, Gtk.PickFlags.DEFAULT)
+        while widget is not None and widget is not container:
             if isinstance(widget, Gtk.Button):
-                return
+                return True
             widget = widget.get_parent()
-        self._on_open_quick_switcher()
+        return False
+
+    def _on_history_row_clicked(self, row, x, y, commit_hash, message):
+        if self._click_hits_button(row, x, y):
+            return
+        self.sound.play("click")
+        dlg = DiffViewerDialog(
+            self,
+            filename=f"{commit_hash} — {message}",
+            diff_text=self.git.show_commit(commit_hash),
+            subtitle=t("commit_diff_sub"),
+        )
+        dlg.present()
+
+    def _on_reword_head(self):
+        subject, _ = self.git.get_last_commit_message()
+
+        def apply(choice, new_subject):
+            if choice != "reword" or not new_subject or new_subject == subject:
+                return
+            ok, out = self.git.reword_head(new_subject)
+            if ok:
+                self.sound.play("commit")
+                self._toast(t("amend_done"))
+                self._load_repo_data()
+                self._refresh_history_view()
+            else:
+                self.sound.play("error")
+                self._show_error_dialog(t("commit_failed"), out)
+
+        desc = t("reword_desc")
+        if self.git.is_head_pushed():
+            desc += "\n\n" + t("amend_pushed_desc")
+        show_choice_dialog(self, t("reword_title"), desc,
+                           [("cancel", t("cancel"), "subtle"), ("reword", t("reword_btn"), "primary")],
+                           apply, entry_text=subject, entry_validator=lambda v: bool(v.strip()))
+
+    def _on_repo_card_clicked(self, card, x, y):
+        # Buttons inside the card (branch badge, sync row, open folder) handle their own clicks
+        if not self._click_hits_button(card, x, y):
+            self._on_open_quick_switcher()
 
     def _set_sidebar_branch(self, name):
         self.sidebar_branch_lbl.set_text(f"{name} ▾" if name else "")

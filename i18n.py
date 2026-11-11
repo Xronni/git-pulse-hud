@@ -253,16 +253,40 @@ TRANSLATIONS = {
         "fetch_failed": "Fetch Failed",
 
         # Sync
-        "sync_fetch_tooltip": "Fetch: check the remote for new commits and branches\nLast fetch: {when}",
+        "sync_fetch_tooltip": "Fetch (Ctrl+Shift+F): check the remote for new commits and branches\nLast fetch: {when}",
         "sync_fetch_error": "Last background fetch failed: {err}",
-        "sync_pull_tooltip": "Pull {n} new commit(s) from {upstream}",
-        "sync_push_tooltip": "Push {n} commit(s) to {upstream}",
+        "sync_pull_tooltip": "Pull {n} new commit(s) from {upstream} (Ctrl+Shift+P)",
+        "sync_push_tooltip": "Push {n} commit(s) to {upstream} (Ctrl+P)",
         "sync_never": "never",
         "time_just_now": "just now",
         "time_min_ago": "{n} min ago",
         "fetch_done": "Fetched from origin ✓",
         "push_done": "Pushed ✓",
-        "pull_done": "Pulled ✓"
+        "pull_done": "Pulled ✓",
+
+        # Commit tools
+        "amend_last": "Amend",
+        "amend_tooltip": "Amend the last commit: add staged files and/or change its message",
+        "amend_pushed_title": "Commit Already Pushed",
+        "amend_pushed_desc": "The last commit is already on the remote. Rewriting it means the next push must be forced (git push --force-with-lease) — avoid this on shared branches.",
+        "amend_btn": "Amend Anyway",
+        "amend_done": "Last commit updated ✓",
+        "commit_done": "Committed ✓",
+        "commit_body_toggle": "Add an extended description",
+        "commit_body_placeholder": "Extended description (optional): why the change was made, details, references",
+        "discard_tooltip": "Discard changes in this file",
+        "discard_title": "Discard Changes",
+        "discard_desc": "Discard all uncommitted changes in “{path}”? This cannot be undone.",
+        "discard_desc_untracked": "Delete the untracked file “{path}”? This cannot be undone.",
+        "discard_btn": "Discard",
+        "discard_done": "Changes discarded: {path}",
+        "history_row_tooltip": "Click to view the changes in this commit",
+        "commit_diff_sub": "Commit changes",
+        "reword_tooltip": "Edit the message of the last commit",
+        "reword_title": "Edit Commit Message",
+        "reword_desc": "New subject line for the last commit (staged files are not included):",
+        "reword_btn": "Save",
+        "amend_keep_message": "Leave empty to keep the previous commit message"
     },
     "ru": {
         "app_title": "GitPulse",
@@ -511,16 +535,40 @@ TRANSLATIONS = {
         "fetch_failed": "Ошибка fetch",
 
         # Sync
-        "sync_fetch_tooltip": "Fetch: проверить сервер на новые коммиты и ветки\nПоследний fetch: {when}",
+        "sync_fetch_tooltip": "Fetch (Ctrl+Shift+F): проверить сервер на новые коммиты и ветки\nПоследний fetch: {when}",
         "sync_fetch_error": "Фоновый fetch не удался: {err}",
-        "sync_pull_tooltip": "Получить новые коммиты из {upstream} ({n})",
-        "sync_push_tooltip": "Отправить коммиты в {upstream} ({n})",
+        "sync_pull_tooltip": "Получить новые коммиты из {upstream} ({n}) — Ctrl+Shift+P",
+        "sync_push_tooltip": "Отправить коммиты в {upstream} ({n}) — Ctrl+P",
         "sync_never": "ещё не было",
         "time_just_now": "только что",
         "time_min_ago": "{n} мин назад",
         "fetch_done": "Данные с сервера обновлены ✓",
         "push_done": "Отправлено ✓",
-        "pull_done": "Изменения получены ✓"
+        "pull_done": "Изменения получены ✓",
+
+        # Commit tools
+        "amend_last": "Amend",
+        "amend_tooltip": "Исправить последний коммит: добавить в него файлы из индекса и/или изменить сообщение",
+        "amend_pushed_title": "Коммит уже отправлен",
+        "amend_pushed_desc": "Последний коммит уже на сервере. После его изменения следующий push придётся делать принудительно (git push --force-with-lease) — не делайте так в общих ветках.",
+        "amend_btn": "Всё равно изменить",
+        "amend_done": "Последний коммит обновлён ✓",
+        "commit_done": "Коммит создан ✓",
+        "commit_body_toggle": "Добавить подробное описание",
+        "commit_body_placeholder": "Подробное описание (необязательно): зачем изменение, детали, ссылки",
+        "discard_tooltip": "Отменить изменения в этом файле",
+        "discard_title": "Отмена изменений",
+        "discard_desc": "Отменить все незакоммиченные изменения в «{path}»? Это действие нельзя отменить.",
+        "discard_desc_untracked": "Удалить неотслеживаемый файл «{path}»? Это действие нельзя отменить.",
+        "discard_btn": "Отменить изменения",
+        "discard_done": "Изменения отменены: {path}",
+        "history_row_tooltip": "Нажмите, чтобы посмотреть изменения в коммите",
+        "commit_diff_sub": "Изменения коммита",
+        "reword_tooltip": "Изменить сообщение последнего коммита",
+        "reword_title": "Сообщение коммита",
+        "reword_desc": "Новый заголовок последнего коммита (файлы из индекса не добавляются):",
+        "reword_btn": "Сохранить",
+        "amend_keep_message": "Оставьте пустым, чтобы сохранить прежнее сообщение"
     }
 }
 

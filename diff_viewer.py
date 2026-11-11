@@ -11,7 +11,7 @@ from i18n import t
 
 
 class DiffViewerDialog(Gtk.Window):
-    def __init__(self, parent, filename, diff_text, is_staged=False, on_stage_toggle=None):
+    def __init__(self, parent, filename, diff_text, is_staged=False, on_stage_toggle=None, subtitle=None):
         super().__init__(transient_for=parent, modal=True)
         self.set_title(f"{t('diff_title')} — {filename}")
         self.set_default_size(780, 540)
@@ -25,15 +25,16 @@ class DiffViewerDialog(Gtk.Window):
         header = Adw.HeaderBar()
         title_widget = Adw.WindowTitle(
             title=filename,
-            subtitle=t("staged_diff_sub") if is_staged else t("unstaged_diff_sub")
+            subtitle=subtitle or (t("staged_diff_sub") if is_staged else t("unstaged_diff_sub"))
         )
         header.set_title_widget(title_widget)
 
-        # Quick action button in header
-        btn_action = Gtk.Button(label=t("unstage_file") if is_staged else t("stage_file"))
-        btn_action.add_css_class("suggested-action" if not is_staged else "destructive-action")
-        btn_action.connect("clicked", self._on_action_clicked)
-        header.pack_end(btn_action)
+        # Quick stage/unstage action (file diffs only; commit diffs are read-only)
+        if on_stage_toggle:
+            btn_action = Gtk.Button(label=t("unstage_file") if is_staged else t("stage_file"))
+            btn_action.add_css_class("suggested-action" if not is_staged else "destructive-action")
+            btn_action.connect("clicked", self._on_action_clicked)
+            header.pack_end(btn_action)
 
         self.set_titlebar(header)
 
@@ -71,7 +72,7 @@ class DiffViewerDialog(Gtk.Window):
 
         for line in lines:
             iter_end = buffer.get_end_iter()
-            if line.startswith("+++") or line.startswith("---") or line.startswith("diff ") or line.startswith("index "):
+            if line.startswith(("+++", "--- ", "diff ", "index ", "commit ")) or line == "---":
                 buffer.insert_with_tags(iter_end, line + "\n", tag_header)
             elif line.startswith("@@"):
                 buffer.insert_with_tags(iter_end, line + "\n", tag_hunk)
