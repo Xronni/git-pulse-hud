@@ -250,7 +250,19 @@ TRANSLATIONS = {
         "conflicted_title": "Conflicts",
         "merge_abort": "Abort Merge",
         "push_detached": "HEAD is detached. Switch to a branch before pushing or pulling.",
-        "fetch_failed": "Fetch Failed"
+        "fetch_failed": "Fetch Failed",
+
+        # Sync
+        "sync_fetch_tooltip": "Fetch: check the remote for new commits and branches\nLast fetch: {when}",
+        "sync_fetch_error": "Last background fetch failed: {err}",
+        "sync_pull_tooltip": "Pull {n} new commit(s) from {upstream}",
+        "sync_push_tooltip": "Push {n} commit(s) to {upstream}",
+        "sync_never": "never",
+        "time_just_now": "just now",
+        "time_min_ago": "{n} min ago",
+        "fetch_done": "Fetched from origin ✓",
+        "push_done": "Pushed ✓",
+        "pull_done": "Pulled ✓"
     },
     "ru": {
         "app_title": "GitPulse",
@@ -496,7 +508,19 @@ TRANSLATIONS = {
         "conflicted_title": "Конфликты",
         "merge_abort": "Прервать слияние",
         "push_detached": "HEAD отсоединён (detached). Переключитесь на ветку перед push или pull.",
-        "fetch_failed": "Ошибка fetch"
+        "fetch_failed": "Ошибка fetch",
+
+        # Sync
+        "sync_fetch_tooltip": "Fetch: проверить сервер на новые коммиты и ветки\nПоследний fetch: {when}",
+        "sync_fetch_error": "Фоновый fetch не удался: {err}",
+        "sync_pull_tooltip": "Получить новые коммиты из {upstream} ({n})",
+        "sync_push_tooltip": "Отправить коммиты в {upstream} ({n})",
+        "sync_never": "ещё не было",
+        "time_just_now": "только что",
+        "time_min_ago": "{n} мин назад",
+        "fetch_done": "Данные с сервера обновлены ✓",
+        "push_done": "Отправлено ✓",
+        "pull_done": "Изменения получены ✓"
     }
 }
 

@@ -39,6 +39,10 @@
   * Branch manager (click the branch badge in the sidebar or press `Ctrl+B`): search, switch, create, rename, merge and delete branches, check out remote branches, fetch.
   * Uncommitted changes blocking a switch? One click stashes them and switches.
   * Merge conflicts are listed in the Changes view with an **Abort Merge** button.
+* 🔄 **Remote Sync & Auto-Refresh:**
+  * Sidebar sync row: **Fetch**, **Pull (↓N)** and **Push (↑N)** are always one click away.
+  * Background fetch every 5 minutes (`auto_fetch_minutes` in `~/.config/git-pulse/config.json`, `0` disables).
+  * The views refresh by themselves when files, the index or HEAD change outside the app (editor, terminal).
 * 📦 **Git Stash Shelf & Inspector:**
   * Dedicated split-view modal dialog displaying all stored stashes with relative timestamps and messages.
   * Real-time syntax-colored diff preview (`+green`, `-red`).
@@ -160,6 +164,10 @@ git-pulse-hud/
   * Менеджер веток (клик по плашке ветки в сайдбаре или `Ctrl+B`): поиск, переключение, создание, переименование, слияние и удаление веток, переход на ветки с сервера, fetch.
   * Незакоммиченные изменения мешают переключиться? Один клик — спрятать их в stash и переключиться.
   * Конфликты слияния показываются на вкладке изменений с кнопкой **«Прервать слияние»**.
+* 🔄 **Синхронизация и автообновление:**
+  * Ряд синхронизации в сайдбаре: **Fetch**, **Pull (↓N)** и **Push (↑N)** всегда в один клик.
+  * Фоновый fetch каждые 5 минут (`auto_fetch_minutes` в `~/.config/git-pulse/config.json`, `0` — выключить).
+  * Экраны обновляются сами, когда файлы, индекс или HEAD меняются вне приложения (редактор, терминал).
 * 📦 **Полка и инспектор Git Stash:**
   * Отдельное окно управления тайниками с датами и сообщениями.
   * Моментальный предпросмотр diff каждого тайника с синтаксической подсветкой.

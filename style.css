@@ -646,3 +646,32 @@ button.branch-row-btn:hover {
 .conflict-header {
     color: #f87171;
 }
+
+/* Sync row (fetch / pull / push) */
+.sync-row {
+    margin-top: 2px;
+}
+
+button.sync-btn {
+    min-height: 0;
+    padding: 3px 6px;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'JetBrainsMono Nerd Font', 'JetBrains Mono', 'Ubuntu Sans Mono', monospace;
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: none;
+}
+
+button.sync-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+button.sync-btn.sync-attn {
+    background: rgba(99, 102, 241, 0.22);
+    border-color: rgba(129, 140, 248, 0.45);
+    color: #c7d2fe;
+}

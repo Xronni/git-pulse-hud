@@ -13,6 +13,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Hermetic git: the developer's ~/.gitconfig (pull.rebase, hooks, signing…) must not leak in
+os.environ["GIT_CONFIG_GLOBAL"] = os.devnull
+os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
+
 from git_engine import GitEngine, DETACHED_HEAD_MSG  # noqa: E402
 
 
@@ -250,6 +254,51 @@ class PushSafetyTests(RepoTestCase):
         self.git.stage_all()
         self.git.commit("f")
         self.assertEqual(self.git.get_ahead_behind(), (1, 0))
+
+
+class SyncTests(RepoTestCase):
+    def setUp(self):
+        super().setUp()
+        self._remote = tempfile.TemporaryDirectory()
+        self.addCleanup(self._remote.cleanup)
+        sh(self._remote.name, "init", "-q", "--bare", "-b", "main")
+        sh(self.root, "remote", "add", "origin", self._remote.name)
+        sh(self.root, "push", "-q", "-u", "origin", "main")
+        # A second clone pushes a commit the first one does not have
+        self._other = tempfile.TemporaryDirectory()
+        self.addCleanup(self._other.cleanup)
+        other = os.path.join(self._other.name, "c")
+        subprocess.run(["git", "clone", "-q", self._remote.name, other], check=True, capture_output=True)
+        sh(other, "config", "user.name", "O")
+        sh(other, "config", "user.email", "o@example.com")
+        write(other, "remote.txt", "r\n")
+        sh(other, "add", "-A")
+        sh(other, "commit", "-q", "-m", "remote")
+        sh(other, "push", "-q", "origin", "main")
+
+    def test_fetch_then_pull_divergent_merges(self):
+        write(self.root, "local.txt", "l\n")
+        self.git.stage_all()
+        self.git.commit("local")
+        self.assertEqual(self.git.get_ahead_behind(), (1, 0))
+        ok, msg = self.git.fetch()
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.git.get_ahead_behind(), (1, 1))
+        ok, msg = self.git.pull()
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.git.get_ahead_behind(), (2, 0))  # local commit + merge commit
+
+    def test_state_signature_tracks_changes(self):
+        sig1 = self.git.state_signature()
+        self.assertEqual(sig1, self.git.state_signature())
+        write(self.root, "base.txt", "changed\n")
+        sig2 = self.git.state_signature()
+        self.assertNotEqual(sig1, sig2)
+        write(self.root, "base.txt", "changed again\nmore\n")
+        self.assertNotEqual(sig2, self.git.state_signature())
+        self.git.fetch()
+        sig3 = self.git.state_signature()
+        self.assertIn("branch.ab +0 -1", sig3)
 
 
 class RunnerTests(unittest.TestCase):

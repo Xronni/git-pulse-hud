@@ -274,6 +274,10 @@ class GitEngine:
         if not branch:
             return False, DETACHED_HEAD_MSG
         args = ["pull", "--no-edit"]
+        # git >= 2.33 refuses divergent pulls unless a strategy is configured.
+        # Respect the user's pull.rebase / pull.ff, otherwise merge (like GitHub Desktop).
+        if not self._run(["config", "--get", "pull.rebase"]).strip() and not self._run(["config", "--get", "pull.ff"]).strip():
+            args.append("--no-rebase")
         if not self.get_upstream(branch):
             args += [remote, branch]
         return self._network(args, token, remote).pair()
@@ -426,6 +430,21 @@ class GitEngine:
                 item["conflict"] = fields[1]
                 result["conflicted"].append(item)
         return result
+
+    def state_signature(self):
+        """Cheap fingerprint of HEAD, branch, ahead/behind, index and work tree.
+
+        Two equal signatures mean the UI does not need to be rebuilt; used by
+        the auto-refresh poller. Returns None when the repo is not valid.
+        """
+        if not self.is_valid():
+            return None
+        status = self._git(["status", "--porcelain=v2", "-z", "--branch", "-uall"], strip=False)
+        if not status.ok:
+            return None
+        numstat = self._git(["diff", "--numstat", "-z"], strip=False).out
+        stashes = self._run(["rev-parse", "-q", "--verify", "refs/stash"])
+        return f"{self.root_path}\0{status.out}\0{numstat}\0{stashes}"
 
     def has_changes(self, include_untracked=True):
         """True if the work tree or index has uncommitted changes."""

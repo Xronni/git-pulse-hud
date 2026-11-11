@@ -28,6 +28,7 @@ from stash_dialog import StashInspectorDialog
 from release_dialog import ReleaseDrafterDialog
 from quick_switcher import QuickSwitcherDialog
 from branch_switcher import BranchSwitcherPopover
+from window_sync import SyncMixin
 import i18n
 from i18n import t
 
@@ -51,7 +52,7 @@ def plural_ru(n, one, few, many):
         return many
 
 
-class GitPulseWindow(Gtk.ApplicationWindow):
+class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
         self.set_title("GitPulse")
@@ -102,6 +103,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self._build_main_layout()
         self._update_all_strings()
         self._load_repo_data()
+        self._start_sync_timers()
 
         # Prompt for repo selection on first launch or if repository is not set
         if not self.config.get("first_run_completed") or not self.git.is_valid():
@@ -157,7 +159,10 @@ class GitPulseWindow(Gtk.ApplicationWindow):
 
     def _build_main_layout(self):
         root_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self.set_child(root_box)
+        # Toasts for non-blocking notifications (errors still use modal dialogs)
+        self.toast_overlay = Adw.ToastOverlay()
+        self.toast_overlay.set_child(root_box)
+        self.set_child(self.toast_overlay)
 
         # 1. Left Navigation Sidebar
         self._build_sidebar(root_box)
@@ -287,6 +292,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self.sidebar_pills_row.append(self.sidebar_ahead)
 
         repo_card.append(self.sidebar_pills_row)
+        self._build_sync_row(repo_card)
         sidebar.append(repo_card)
 
         # Navigation Buttons
@@ -1110,6 +1116,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             self._set_sidebar_branch("")
             self.sidebar_ahead.set_text("")
             self.sidebar_pills_row.set_visible(False)
+            self.sidebar_sync_row.set_visible(False)
             self.btn_stash_shelf.set_visible(False)
             self.btn_push_only.set_visible(False)
             self.commit_card.set_visible(False)
@@ -1122,6 +1129,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         self._set_sidebar_branch(self.git.get_current_branch())
         ahead, behind = self.git.get_ahead_behind()
         self.sidebar_ahead.set_text(f"↑{ahead} ↓{behind}")
+        self._refresh_sync_status(ahead, behind)
+        self._mark_state_fresh()
         has_remote = self.git.has_remote("origin")
         if ahead > 0 and has_remote:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
@@ -1488,57 +1497,6 @@ class GitPulseWindow(Gtk.ApplicationWindow):
             err_msg = out.strip() if out else "Nothing to commit or commit failed."
             self._show_error_dialog(t("commit_failed"), err_msg)
 
-    def _do_push(self):
-        if not self.git.is_valid():
-            return
-        if not self.git.has_remote("origin"):
-            self._on_publish_dialog()
-            return
-        if self.git.is_detached():
-            self.sound.play("error")
-            self._show_error_dialog(t("push_failed"), t("push_detached"))
-            return
-
-        self.btn_push_only.set_sensitive(False)
-        tok = self.telemetry.token
-
-        def _bg():
-            ok, out = self.git.push(token=tok)
-            def _done():
-                self.btn_push_only.set_sensitive(True)
-                if ok:
-                    self.sound.play("push")
-                    self._load_repo_data()
-                else:
-                    self.sound.play("error")
-                    err_msg = out.strip() if out else "Unknown error during push."
-                    self._show_error_dialog(t("push_failed"), err_msg)
-            GLib.idle_add(_done)
-        threading.Thread(target=_bg, daemon=True).start()
-
-    def _do_pull(self):
-        if not self.git.is_valid() or not self.git.has_remote("origin"):
-            return
-        if self.git.is_detached():
-            self.sound.play("error")
-            self._show_error_dialog(t("pull_failed"), t("push_detached"))
-            return
-
-        tok = self.telemetry.token
-
-        def _bg():
-            ok, out = self.git.pull(token=tok)
-            def _done():
-                if ok:
-                    self.sound.play("pop")
-                    self._load_repo_data()
-                else:
-                    self.sound.play("error")
-                    err_msg = out.strip() if out else "Unknown error during pull."
-                    self._show_error_dialog(t("pull_failed"), err_msg)
-            GLib.idle_add(_done)
-        threading.Thread(target=_bg, daemon=True).start()
-
     def _on_stash(self, btn):
         ok, out = self.git.stash_save()
         if ok:
@@ -1550,6 +1508,11 @@ class GitPulseWindow(Gtk.ApplicationWindow):
         if ok:
             self.sound.play("pop")
             self._load_repo_data()
+
+    def _toast(self, message, timeout=3):
+        toast = Adw.Toast(title=message)
+        toast.set_timeout(timeout)
+        self.toast_overlay.add_toast(toast)
 
     def _copy_to_clipboard(self, text):
         clipboard = self.get_display().get_clipboard()
@@ -1574,22 +1537,8 @@ class GitPulseWindow(Gtk.ApplicationWindow):
                     self._show_error_dialog(t("btn_open_repo"), "Cannot open system root or home directory as a repository.")
                     return
 
-                if self.git.set_repo(path):
-                    self.sound.play("click")
-                    self.config["last_repo"] = path
-                    self.config["first_run_completed"] = True
-                    if "recent_repos" not in self.config or not isinstance(self.config["recent_repos"], list):
-                        self.config["recent_repos"] = []
-                    if path not in self.config["recent_repos"]:
-                        self.config["recent_repos"].insert(0, path)
-                    self._save_config()
-                    self._load_repo_data()
-                    if self.active_view == "pulse":
-                        self._refresh_pulse_view()
-                    elif self.active_view == "history":
-                        self._refresh_history_view()
-                    elif self.active_view == "telemetry":
-                        self._refresh_telemetry_view()
+                if self.git.find_repo_root(path):
+                    self._switch_to_repo_path(path)
                 else:
                     self.sound.play("pop")
                     self.git.repo_path = os.path.abspath(path)
@@ -1711,6 +1660,7 @@ class GitPulseWindow(Gtk.ApplicationWindow):
     def _switch_to_repo_path(self, path):
         if self.git.set_repo(path):
             self.sound.play("click")
+            self._reset_sync_state()
             self.config["last_repo"] = path
             self.config["first_run_completed"] = True
             recent = self.config.get("recent_repos", [])
