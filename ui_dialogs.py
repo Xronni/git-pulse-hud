@@ -1,112 +1,147 @@
 #!/usr/bin/env python3
 """
-GitPulse HUD — small modal dialogs shared across views (confirm / choice / text prompt).
-Styled like the other GitPulse modals (token-modal-window).
+GitPulse HUD — modal dialogs shared across views.
+
+Built on Adw.AlertDialog: with an Adw.ApplicationWindow parent they are drawn
+inside the main window (centered, dimming it) instead of as separate windows.
 """
+
+import os
 
 import gi
 gi.require_version('Gtk', '4.0')
-gi.require_version('Gdk', '4.0')
-from gi.repository import Gtk, Gdk
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, Pango
 
-_STYLE_CLASSES = {
-    "subtle": ["subtle-btn"],
-    "primary": ["primary-btn"],
-    "destructive": ["primary-btn", "danger-btn"],
+from i18n import t
+
+_APPEARANCE = {
+    "primary": Adw.ResponseAppearance.SUGGESTED,
+    "destructive": Adw.ResponseAppearance.DESTRUCTIVE,
 }
+
+AUTH_ERROR_HINTS = ("auth", "token", "permission", "denied", "credential", "403", "401")
 
 
 def show_choice_dialog(parent, title, message, choices, on_choice=None,
-                       entry_text=None, entry_validator=None):
+                       entry_text=None, entry_validator=None, extra_child=None):
     """
     Shows a modal dialog with buttons.
 
     choices:   [(choice_id, label, style)] where style is 'subtle' | 'primary' | 'destructive'.
-               The first choice is treated as Cancel (also triggered by Escape).
-    on_choice: callback(choice_id, entry_value_or_None); not called on Escape/close.
+               The first choice is Cancel (also triggered by Escape / closing).
+    on_choice: callback(choice_id, entry_value_or_None); never called for Cancel.
     entry_text: when not None, shows a text entry prefilled with this value.
     entry_validator: callable(text) -> bool; non-cancel buttons are disabled while it returns False.
+    extra_child: optional widget shown under the message (ignored when entry_text is set).
     """
-    dlg = Gtk.Window(transient_for=parent, modal=True)
-    dlg.set_title(title)
-    dlg.set_default_size(460, -1)
-    dlg.set_resizable(False)
-    dlg.add_css_class("token-modal-window")
+    dlg = Adw.AlertDialog(heading=title, body=message or "")
+    cancel_id = choices[0][0]
+    action_ids = [cid for cid, _, _ in choices[1:]]
+    has_destructive = any(style == "destructive" for _, _, style in choices)
 
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-    box.set_margin_top(20)
-    box.set_margin_bottom(20)
-    box.set_margin_start(20)
-    box.set_margin_end(20)
-    dlg.set_child(box)
-
-    box.append(Gtk.Label(label=title, css_classes=["view-title"], xalign=0, wrap=True))
-    if message:
-        box.append(Gtk.Label(label=message, css_classes=["view-subtitle"], xalign=0, wrap=True, max_width_chars=60))
+    for cid, label, style in choices:
+        dlg.add_response(cid, label)
+        if style in _APPEARANCE:
+            dlg.set_response_appearance(cid, _APPEARANCE[style])
+    dlg.set_close_response(cancel_id)
+    # Never let a stray Enter confirm a destructive action
+    dlg.set_default_response(cancel_id if (has_destructive or not action_ids) else action_ids[-1])
 
     entry = None
     if entry_text is not None:
         entry = Gtk.Entry(text=entry_text)
-        entry.add_css_class("token-entry")
-        box.append(entry)
+        dlg.set_extra_child(entry)
+    elif extra_child is not None:
+        dlg.set_extra_child(extra_child)
 
-    btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    btn_row.set_margin_top(4)
-    btn_row.append(Gtk.Box(hexpand=True))
-    box.append(btn_row)
+    def _valid():
+        return entry_validator(entry.get_text().strip()) if (entry and entry_validator) else True
 
-    action_buttons = []
-    cancel_button = None
-    has_destructive = any(style == "destructive" for _, _, style in choices)
+    def _on_response(_dlg, response):
+        if response != cancel_id and on_choice:
+            on_choice(response, entry.get_text().strip() if entry else None)
 
-    def _finish(choice_id):
-        value = entry.get_text().strip() if entry else None
-        dlg.close()
-        if on_choice:
-            on_choice(choice_id, value)
-
-    for idx, (choice_id, label, style) in enumerate(choices):
-        btn = Gtk.Button(label=label, css_classes=list(_STYLE_CLASSES.get(style, ["subtle-btn"])))
-        if idx == 0:
-            btn.connect("clicked", lambda b: dlg.close())
-            cancel_button = btn
-        else:
-            btn.connect("clicked", lambda b, cid=choice_id: _finish(cid))
-            action_buttons.append((choice_id, btn))
-        btn_row.append(btn)
-
-    def _validate(*_):
-        valid = entry_validator(entry.get_text().strip()) if (entry and entry_validator) else True
-        for _, b in action_buttons:
-            b.set_sensitive(valid)
-        return valid
+    dlg.connect("response", _on_response)
 
     if entry:
-        entry.connect("changed", _validate)
+        def _on_changed(_e):
+            ok = _valid()
+            for cid in action_ids:
+                dlg.set_response_enabled(cid, ok)
+        entry.connect("changed", _on_changed)
 
         def _on_activate(_e):
-            if action_buttons and _validate():
-                _finish(action_buttons[-1][0])
+            if action_ids and _valid():
+                dlg.force_close()
+                if on_choice:
+                    on_choice(action_ids[-1], entry.get_text().strip())
         entry.connect("activate", _on_activate)
-        _validate()
+        _on_changed(entry)
 
-    key_ctl = Gtk.EventControllerKey()
-
-    def _on_key(_ctl, keyval, _code, _state):
-        if keyval == Gdk.KEY_Escape:
-            dlg.close()
-            return True
-        return False
-    key_ctl.connect("key-pressed", _on_key)
-    dlg.add_controller(key_ctl)
-
-    dlg.present()
+    dlg.present(parent)
     if entry:
         entry.grab_focus()
         entry.select_region(0, -1)
-    elif has_destructive and cancel_button:
-        # Never let a stray Enter confirm a destructive action
-        cancel_button.grab_focus()
-    elif action_buttons:
-        action_buttons[-1][1].grab_focus()
     return dlg
+
+
+def _scrolled_text(text, max_height=260, monospace=True):
+    lbl = Gtk.Label(label=text, xalign=0, yalign=0, wrap=True, selectable=True)
+    lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+    if monospace:
+        lbl.add_css_class("monospace")
+    lbl.add_css_class("dialog-detail-text")
+    scrolled = Gtk.ScrolledWindow(max_content_height=max_height, propagate_natural_height=True)
+    scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    scrolled.set_child(lbl)
+    return scrolled
+
+
+def show_error_dialog(parent, title, message, on_open_token_guide=None):
+    """Error with selectable details; offers the token guide for auth-looking errors."""
+    message = (message or "").strip()
+    choices = [("ok", "OK", "primary")]
+    if on_open_token_guide and any(w in message.lower() for w in AUTH_ERROR_HINTS):
+        choices.append(("token", f"🔑 {t('token_guide_title')}", "subtle"))
+
+    dlg = Adw.AlertDialog(heading=title)
+    for cid, label, style in choices:
+        dlg.add_response(cid, label)
+        if style in _APPEARANCE:
+            dlg.set_response_appearance(cid, _APPEARANCE[style])
+    dlg.set_close_response("ok")
+    dlg.set_default_response("ok")
+    if message:
+        dlg.set_extra_child(_scrolled_text(message))
+
+    def _on_response(_dlg, response):
+        if response == "token" and on_open_token_guide:
+            on_open_token_guide()
+    dlg.connect("response", _on_response)
+    dlg.present(parent)
+    return dlg
+
+
+def show_secret_findings_dialog(parent, findings, on_confirm=None):
+    """Lists secrets found in staged files; optionally lets the user commit anyway."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    for finding in findings:
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row.add_css_class("file-item-row")
+        row.append(Gtk.Label(label=finding.get("rule", "Secret"), css_classes=["status-tag", "status-del"]))
+        location = f"{os.path.basename(finding.get('file', ''))}:{finding.get('line', 0)}"
+        row.append(Gtk.Label(label=location, css_classes=["stat-label"]))
+        row.append(Gtk.Label(label=finding.get("preview", ""), xalign=0, hexpand=True,
+                             ellipsize=Pango.EllipsizeMode.END))
+        box.append(row)
+    scrolled = Gtk.ScrolledWindow(max_content_height=260, propagate_natural_height=True)
+    scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    scrolled.set_child(box)
+
+    choices = [("cancel", t("cancel"), "subtle")]
+    if on_confirm:
+        choices.append(("commit", t("commit_anyway"), "destructive"))
+    return show_choice_dialog(parent, t("secrets_dialog_title"), t("secrets_dialog_desc"), choices,
+                              lambda choice, _v: on_confirm() if choice == "commit" else None,
+                              extra_child=scrolled)

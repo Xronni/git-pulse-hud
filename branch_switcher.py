@@ -7,23 +7,14 @@ rename, merge into current and delete — plus fetch from the remote.
 Slow git operations run on a worker thread; the UI is updated via GLib.idle_add.
 """
 
-import threading
-
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gdk', '4.0')
-from gi.repository import Gtk, Gdk, GLib, Pango
+from gi.repository import Gtk, Gdk, Pango
 
 from i18n import t
 from ui_dialogs import show_choice_dialog
-
-
-def run_in_background(fn, on_done):
-    """Runs fn() on a worker thread and calls on_done(result) on the GTK main loop."""
-    def _worker():
-        result = fn()
-        GLib.idle_add(lambda: (on_done(result), False)[1])
-    threading.Thread(target=_worker, daemon=True).start()
+from async_tasks import run_in_background
 
 
 class BranchSwitcherPopover(Gtk.Popover):

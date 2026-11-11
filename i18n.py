@@ -627,3 +627,16 @@ def format_relative_time(rel_str):
         if eng in s:
             return s.replace(eng, ru)
     return s
+
+
+def plural_ru(n, one, few, many):
+    try:
+        n = int(n)
+    except (ValueError, TypeError):
+        return f"{n} {many}"
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    elif 2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+        return few
+    else:
+        return many

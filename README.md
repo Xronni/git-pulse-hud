@@ -131,8 +131,15 @@ Runs 36 automated functional, unit, and integration tests across all subsystems.
 
 ```
 git-pulse-hud/
-├── main.py              # Main Application Window & GTK4 Event Loop
-├── git_engine.py        # High-performance Git CLI & Porcelain Parser
+├── main.py              # Application, main window, sidebar, config & shortcuts
+├── window_changes.py    # Files & Changes view: staging, discard, commit composer
+├── window_history.py    # Commit History view: graph, commit diff, edit message
+├── window_insights.py   # Repository Pulse & GitHub Analytics views
+├── window_sync.py       # Fetch / Pull / Push, background fetch, auto-refresh
+├── branch_switcher.py   # Branch manager popover (Ctrl+B)
+├── ui_dialogs.py        # In-window Adw.AlertDialog helpers (confirm, prompt, errors)
+├── async_tasks.py       # Run blocking git work off the GTK main loop
+├── git_engine.py        # Git CLI wrapper: single runner, porcelain v2 parser, branches
 ├── github_telemetry.py  # GitHub API client (Views, Referrers, Downloads, Reactions)
 ├── pulse_widget.py      # Cairo DrawingArea widgets (Velocity, Punchcard, Views, Graph)
 ├── diff_viewer.py       # Syntax-highlighted inline Diff Dialog
@@ -147,7 +154,8 @@ git-pulse-hud/
 ├── run.sh               # Intelligent launcher with clean OS dependency detection
 ├── install.sh           # Linux desktop entry installer
 ├── uninstall.sh         # Clean uninstaller
-├── test.sh              # Fast test runner script
+├── test.sh              # Fast test runner script (unit tests + verify_app.py)
+├── tests/               # Unit tests for git_engine against throwaway repositories
 ├── assets/
 │   └── icon.png         # Modern 256x256 application logo
 ├── README.md            # Bilingual documentation & showcase

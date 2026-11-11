@@ -6,31 +6,30 @@ Author: Xronni (https://github.com/Xronni)
 
 import sys
 import os
-import re
 import json
 import threading
-from datetime import datetime
 
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 gi.require_version('Gdk', '4.0')
-gi.require_version('GdkPixbuf', '2.0')
 
-from gi.repository import Gtk, Adw, Gdk, GdkPixbuf, GLib, Pango
+from gi.repository import Gtk, Adw, Gdk, GLib, Pango
 
 from git_engine import GitEngine
 from sound_engine import SoundEngine
 from github_telemetry import GitHubTelemetry
-from pulse_widget import CommitVelocityWidget, PunchcardWidget, TrafficViewsChart, BranchGraphNodeWidget
-from diff_viewer import DiffViewerDialog
 from secret_scanner import scan_staged_files
 from stash_dialog import StashInspectorDialog
 from release_dialog import ReleaseDrafterDialog
 from quick_switcher import QuickSwitcherDialog
 from branch_switcher import BranchSwitcherPopover
 from window_sync import SyncMixin
-from ui_dialogs import show_choice_dialog
+from window_changes import ChangesViewMixin
+from window_history import HistoryViewMixin
+from window_insights import InsightsViewMixin
+from async_tasks import run_in_background
+from ui_dialogs import show_error_dialog
 import i18n
 from i18n import t
 
@@ -41,20 +40,7 @@ CSS_FILE = os.path.join(APP_DIR, "style.css")
 ICON_FILE = os.path.join(APP_DIR, "assets", "icon.png")
 
 
-def plural_ru(n, one, few, many):
-    try:
-        n = int(n)
-    except (ValueError, TypeError):
-        return f"{n} {many}"
-    if n % 10 == 1 and n % 100 != 11:
-        return one
-    elif 2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
-        return few
-    else:
-        return many
-
-
-class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
+class GitPulseWindow(ChangesViewMixin, HistoryViewMixin, InsightsViewMixin, SyncMixin, Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
         self.set_title("GitPulse")
@@ -165,7 +151,12 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         # Toasts for non-blocking notifications (errors still use modal dialogs)
         self.toast_overlay = Adw.ToastOverlay()
         self.toast_overlay.set_child(root_box)
-        self.set_child(self.toast_overlay)
+        # Adw.ApplicationWindow has no titlebar of its own: add a header bar via ToolbarView.
+        # Being an Adw window also lets Adw.AlertDialog render inside it.
+        toolbar_view = Adw.ToolbarView()
+        toolbar_view.add_top_bar(Adw.HeaderBar())
+        toolbar_view.set_content(self.toast_overlay)
+        self.set_content(toolbar_view)
 
         # 1. Left Navigation Sidebar
         self._build_sidebar(root_box)
@@ -393,623 +384,6 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         elif nav_id == "telemetry":
             self._refresh_telemetry_view()
 
-    # --- VIEW 1: CHANGES & STAGING ---
-
-    def _build_view_changes(self):
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-
-        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.lbl_view1_title = Gtk.Label(label=t("tab_changes"), css_classes=["view-title"], xalign=0)
-        self.lbl_view1_title.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_view1_title)
-        self.lbl_changes_sub = Gtk.Label(label=t("sub_changes"), css_classes=["view-subtitle"], xalign=0)
-        self.lbl_changes_sub.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_changes_sub)
-        top_row.append(title_box)
-
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        top_row.append(spacer)
-
-        self.btn_stash_shelf = Gtk.Button(label=f"📦 {t('stashes')}")
-        self.btn_stash_shelf.add_css_class("subtle-btn")
-        self.btn_stash_shelf.connect("clicked", lambda b: self._on_open_stashes())
-        top_row.append(self.btn_stash_shelf)
-
-        self.btn_push_only = Gtk.Button(label=f"↑ {t('btn_push')}")
-        self.btn_push_only.add_css_class("primary-btn")
-        self.btn_push_only.connect("clicked", lambda b: self._do_push())
-        self.btn_push_only.set_visible(False)
-        top_row.append(self.btn_push_only)
-
-        page.append(top_row)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        page.append(scrolled)
-
-        self.files_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self.files_container.set_vexpand(True)
-        self.files_container.set_hexpand(True)
-        scrolled.set_child(self.files_container)
-
-        # Commit Composer Card
-        self.commit_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        self.commit_card.add_css_class("hud-card")
-
-        self.lbl_composer_hdr = Gtk.Label(label=t("commit_builder"), css_classes=["hud-card-header"], xalign=0)
-        self.commit_card.append(self.lbl_composer_hdr)
-
-        # Conventional Commit Type Chips
-        types_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.type_chips = {}
-        conventional_types = ["feat", "fix", "refactor", "docs", "perf", "chore", "test", "style"]
-        for ctype in conventional_types:
-            chip = Gtk.Button(label=ctype)
-            chip.add_css_class("chip-btn")
-            if ctype == "feat":
-                chip.add_css_class("active")
-            chip.connect("clicked", lambda b, ct=ctype: self._select_type(ct))
-            types_row.append(chip)
-            self.type_chips[ctype] = chip
-
-        types_row.append(Gtk.Box(hexpand=True))
-
-        self.check_breaking = Gtk.CheckButton(label=t("breaking_change"))
-        self.check_breaking.connect("toggled", lambda *a: self._update_commit_preview())
-        types_row.append(self.check_breaking)
-
-        self.check_amend = Gtk.CheckButton(label=t("amend_last"))
-        self.check_amend.set_tooltip_text(t("amend_tooltip"))
-        self.check_amend.connect("toggled", self._on_amend_toggled)
-        types_row.append(self.check_amend)
-
-        self.commit_card.append(types_row)
-
-        input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.entry_scope = Gtk.Entry()
-        self.entry_scope.set_placeholder_text(t("commit_scope_placeholder"))
-        self.entry_scope.set_width_chars(16)
-        self.entry_scope.connect("changed", lambda *a: self._update_commit_preview())
-        input_row.append(self.entry_scope)
-
-        self.entry_desc = Gtk.Entry()
-        self.entry_desc.set_placeholder_text(t("commit_desc_placeholder"))
-        self.entry_desc.set_hexpand(True)
-        self.entry_desc.connect("changed", lambda *a: self._update_commit_preview())
-        self.entry_desc.connect("activate", lambda *a: self._on_commit())
-        input_row.append(self.entry_desc)
-
-        self.btn_body_toggle = Gtk.ToggleButton(icon_name="format-justify-left-symbolic", css_classes=["subtle-icon-btn"])
-        self.btn_body_toggle.set_tooltip_text(t("commit_body_toggle"))
-        self.btn_body_toggle.connect("toggled", lambda b: self._set_body_visible(b.get_active()))
-        input_row.append(self.btn_body_toggle)
-
-        self.commit_card.append(input_row)
-
-        # Optional multi-line commit body
-        self.body_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN)
-        body_scroll = Gtk.ScrolledWindow(min_content_height=64, max_content_height=120, propagate_natural_height=True)
-        body_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        body_scroll.add_css_class("commit-body-box")
-        self.text_body = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False)
-        self.text_body.add_css_class("commit-body-text")
-        self.text_body.set_tooltip_text(t("commit_body_placeholder"))
-        body_scroll.set_child(self.text_body)
-        self.body_revealer.set_child(body_scroll)
-        self.commit_card.append(self.body_revealer)
-
-        bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.preview_lbl = Gtk.Label(label="feat: ...")
-        self.preview_lbl.add_css_class("commit-preview-box")
-        self.preview_lbl.set_xalign(0)
-        self.preview_lbl.set_hexpand(True)
-        bottom_row.append(self.preview_lbl)
-
-        # Pre-Commit Security Scanner Pill
-        self.scanner_status_pill = Gtk.Button(label=f"🛡️ {t('scanner_clean')}")
-        self.scanner_status_pill.add_css_class("scanner-pill-clean")
-        self.scanner_status_pill.connect("clicked", self._on_scanner_pill_clicked)
-        bottom_row.append(self.scanner_status_pill)
-
-        self.btn_commit = Gtk.Button(label=t("btn_commit"))
-        self.btn_commit.set_tooltip_text("Ctrl+Enter")
-        self.btn_commit.add_css_class("subtle-btn")
-        self.btn_commit.connect("clicked", lambda b: self._on_commit(push=False))
-        bottom_row.append(self.btn_commit)
-
-        self.btn_commit_push = Gtk.Button(label=t("btn_commit_push"))
-        self.btn_commit_push.set_tooltip_text("Ctrl+Shift+Enter")
-        self.btn_commit_push.add_css_class("primary-btn")
-        self.btn_commit_push.connect("clicked", lambda b: self._on_commit(push=True))
-        bottom_row.append(self.btn_commit_push)
-
-        self.commit_card.append(bottom_row)
-        page.append(self.commit_card)
-
-        self.stack.add_named(page, "changes")
-
-    def _select_type(self, ctype):
-        self.selected_type = ctype
-        self.sound.play("click")
-        for ct, chip in self.type_chips.items():
-            if ct == ctype:
-                chip.add_css_class("active")
-            else:
-                chip.remove_css_class("active")
-        self._update_commit_preview()
-
-    def _update_commit_preview(self):
-        if getattr(self, "check_amend", None) and self.check_amend.get_active() and not self.entry_desc.get_text().strip():
-            # Amend without a new description keeps the previous message
-            subject, _ = self.git.get_last_commit_message()
-            self.preview_lbl.set_text(f"↺ {subject}")
-            return
-        scope = self.entry_scope.get_text().strip()
-        desc = self.entry_desc.get_text().strip() or "..."
-        breaking = "!" if self.check_breaking.get_active() else ""
-        if scope:
-            full = f"{self.selected_type}({scope}){breaking}: {desc}"
-        else:
-            full = f"{self.selected_type}{breaking}: {desc}"
-        self.preview_lbl.set_text(full)
-
-    # --- VIEW 2: COMMIT HISTORY ---
-
-    def _build_view_history(self):
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-
-        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.lbl_view2_title = Gtk.Label(label=t("tab_history"), css_classes=["view-title"], xalign=0)
-        self.lbl_view2_title.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_view2_title)
-        self.lbl_hist_sub = Gtk.Label(label=t("sub_history"), css_classes=["view-subtitle"], xalign=0)
-        self.lbl_hist_sub.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_hist_sub)
-        top_row.append(title_box)
-        top_row.append(Gtk.Box(hexpand=True))
-
-        self.btn_branch_switch = Gtk.Button(label="🌿 main ▾", css_classes=["branch-switch-btn"])
-        self.btn_branch_switch.set_tooltip_text(t("branch_switch_tooltip"))
-        self.btn_branch_switch.connect("clicked", self._on_branch_switcher_clicked)
-        top_row.append(self.btn_branch_switch)
-
-        page.append(top_row)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        page.append(scrolled)
-
-        self.history_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.history_container.set_vexpand(True)
-        self.history_container.set_hexpand(True)
-        scrolled.set_child(self.history_container)
-
-        self.stack.add_named(page, "history")
-
-    def _refresh_history_view(self):
-        while child := self.history_container.get_first_child():
-            self.history_container.remove(child)
-
-        if not self.git.is_valid():
-            self.btn_branch_switch.set_label("🌿 — ▾")
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            box.set_halign(Gtk.Align.CENTER)
-            box.set_valign(Gtk.Align.CENTER)
-            box.set_vexpand(True)
-            box.set_hexpand(True)
-            icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
-            icon.set_pixel_size(44)
-            box.append(icon)
-            lbl = Gtk.Label(label=t("no_repo_title"), css_classes=["view-title"])
-            box.append(lbl)
-            sub = Gtk.Label(label=t("no_repo_desc"), css_classes=["view-subtitle"])
-            box.append(sub)
-            self.history_container.append(box)
-            return
-
-        cur_branch = self.git.get_current_branch()
-        self.btn_branch_switch.set_label(f"🌿 {cur_branch} ▾")
-
-        commits = self.git.get_commit_graph(45)
-        if not commits:
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-            box.set_halign(Gtk.Align.CENTER)
-            box.set_valign(Gtk.Align.CENTER)
-            box.set_vexpand(True)
-            box.set_hexpand(True)
-            icon = Gtk.Image.new_from_icon_name("document-open-recent-symbolic")
-            icon.set_pixel_size(44)
-            box.append(icon)
-            lbl = Gtk.Label(label=t("no_velocity_title"), css_classes=["view-title"])
-            box.append(lbl)
-            sub = Gtk.Label(label=t("no_velocity_desc"), css_classes=["view-subtitle"])
-            box.append(sub)
-            self.history_container.append(box)
-            return
-
-        for idx, c in enumerate(commits):
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            row.add_css_class("file-item-row")
-            row.add_css_class("history-row")
-            row.set_tooltip_text(t("history_row_tooltip"))
-            row_click = Gtk.GestureClick()
-            row_click.connect("released", lambda g, n, x, y, r=row, h=c["hash"], m=c["message"]:
-                              self._on_history_row_clicked(r, x, y, h, m))
-            row.add_controller(row_click)
-
-            # Cairo Branch Graph Node
-            graph_node = BranchGraphNodeWidget(
-                col=c.get("col", 0),
-                max_cols=c.get("max_cols", 1),
-                is_merge=c.get("is_merge", False)
-            )
-            row.append(graph_node)
-
-            btn_hash = Gtk.Button(label=c["hash"])
-            btn_hash.add_css_class("subtle-btn")
-            btn_hash.set_tooltip_text(t("copy_hash"))
-            btn_hash.connect("clicked", lambda b, h=c["hash"]: self._copy_to_clipboard(h))
-            row.append(btn_hash)
-
-            if c.get("branch"):
-                b_lbl = Gtk.Label(label=c["branch"], css_classes=["branch-badge"])
-                row.append(b_lbl)
-
-            msg_lbl = Gtk.Label(label=c["message"])
-            msg_lbl.set_xalign(0)
-            msg_lbl.set_hexpand(True)
-            msg_lbl.set_ellipsize(Pango.EllipsizeMode.END)
-            row.append(msg_lbl)
-
-            author_lbl = Gtk.Label(label=c["author"])
-            author_lbl.add_css_class("stat-label")
-            row.append(author_lbl)
-
-            date_lbl = Gtk.Label(label=i18n.format_relative_time(c["relative_date"]))
-            date_lbl.add_css_class("stat-label")
-            row.append(date_lbl)
-
-            if idx == 0 and not self.git.is_detached():
-                btn_reword = Gtk.Button(icon_name="document-edit-symbolic", css_classes=["subtle-icon-btn"])
-                btn_reword.set_tooltip_text(t("reword_tooltip"))
-                btn_reword.connect("clicked", lambda b: self._on_reword_head())
-                row.append(btn_reword)
-
-            self.history_container.append(row)
-
-    # --- VIEW 3: REPO PULSE & ANALYTICS ---
-
-    def _build_view_pulse(self):
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-
-        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.lbl_view3_title = Gtk.Label(label=t("tab_pulse"), css_classes=["view-title"], xalign=0)
-        self.lbl_view3_title.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_view3_title)
-        self.lbl_pulse_sub = Gtk.Label(label=t("sub_pulse"), css_classes=["view-subtitle"], xalign=0)
-        self.lbl_pulse_sub.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_pulse_sub)
-        top_row.append(title_box)
-        page.append(top_row)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        page.append(scrolled)
-
-        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        scrolled.set_child(inner)
-
-        stats_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.card_commits = self._make_metric_card("0", t("stat_commits"))
-        self.card_authors = self._make_metric_card("0", t("stat_contributors"))
-        self.card_files = self._make_metric_card("0", t("stat_files"))
-        self.card_stashes = self._make_metric_card("0", t("stat_stashes"))
-        self.card_stashes.add_css_class("clickable-card")
-        self.card_stashes.set_tooltip_text(t("stash_shelf"))
-        stash_click = Gtk.GestureClick()
-        stash_click.connect("pressed", lambda g, n, x, y: self._on_open_stashes())
-        self.card_stashes.add_controller(stash_click)
-
-        for c in [self.card_commits, self.card_authors, self.card_files, self.card_stashes]:
-            c.set_hexpand(True)
-            stats_row.append(c)
-        inner.append(stats_row)
-
-        vel_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        vel_card.add_css_class("hud-card")
-        self.lbl_vel_hdr = Gtk.Label(label=t("velocity_title"), css_classes=["hud-card-header"], xalign=0)
-        self.lbl_vel_hdr.set_ellipsize(Pango.EllipsizeMode.END)
-        vel_card.append(self.lbl_vel_hdr)
-        self.vel_chart = CommitVelocityWidget()
-        vel_card.append(self.vel_chart)
-        inner.append(vel_card)
-
-        punch_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        punch_card.add_css_class("hud-card")
-        self.lbl_punch_hdr = Gtk.Label(label=t("punchcard_title"), css_classes=["hud-card-header"], xalign=0)
-        self.lbl_punch_hdr.set_ellipsize(Pango.EllipsizeMode.END)
-        punch_card.append(self.lbl_punch_hdr)
-        self.punchcard = PunchcardWidget()
-        punch_card.append(self.punchcard)
-        inner.append(punch_card)
-
-        self.stack.add_named(page, "pulse")
-
-    def _make_metric_card(self, value_text, label_text):
-        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        card.add_css_class("metric-card")
-        
-        lbl_v = Gtk.Label(label=value_text, css_classes=["metric-number"], xalign=0)
-        card.append(lbl_v)
-
-        lbl_l = Gtk.Label(label=label_text, css_classes=["metric-label"], xalign=0)
-        lbl_l.set_ellipsize(Pango.EllipsizeMode.END)
-        lbl_l.set_max_width_chars(15)
-        card.append(lbl_l)
-        
-        card.val_widget = lbl_v
-        card.lbl_widget = lbl_l
-        return card
-
-    def _refresh_pulse_view(self):
-        if not self.git.is_valid():
-            self.card_commits.val_widget.set_text("—")
-            self.card_authors.val_widget.set_text("—")
-            self.card_files.val_widget.set_text("—")
-            self.card_stashes.val_widget.set_text("—")
-            self.vel_chart.set_data([])
-            self.punchcard.set_hours([0] * 24)
-            return
-        summary = self.git.get_repo_summary()
-        c_count = int(summary["total_commits"])
-        a_count = int(summary["contributors"])
-        f_count = int(summary["files_count"])
-        s_count = int(summary["stashes"])
-
-        self.card_commits.val_widget.set_text(str(c_count))
-        self.card_authors.val_widget.set_text(str(a_count))
-        self.card_files.val_widget.set_text(str(f_count))
-        self.card_stashes.val_widget.set_text(str(s_count))
-
-        if i18n.get_language() == "ru":
-            self.card_commits.lbl_widget.set_text(plural_ru(c_count, "коммит", "коммита", "коммитов"))
-            self.card_authors.lbl_widget.set_text(plural_ru(a_count, "автор", "автора", "авторов"))
-            self.card_files.lbl_widget.set_text(plural_ru(f_count, "файл", "файла", "файлов"))
-            self.card_stashes.lbl_widget.set_text(plural_ru(s_count, "в тайнике", "в тайнике", "в тайнике"))
-        else:
-            self.card_commits.lbl_widget.set_text("Commits")
-            self.card_authors.lbl_widget.set_text("Authors")
-            self.card_files.lbl_widget.set_text("Files")
-            self.card_stashes.lbl_widget.set_text("In Stash")
-
-        self.vel_chart.set_data(self.git.get_commit_velocity(14))
-        self.punchcard.set_hours(self.git.get_punchcard())
-
-    # --- VIEW 4: GITHUB TELEMETRY ---
-
-    def _build_view_telemetry(self):
-        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-
-        top_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        self.lbl_view4_title = Gtk.Label(label=t("tab_telemetry"), css_classes=["view-title"], xalign=0)
-        self.lbl_view4_title.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_view4_title)
-        self.lbl_telem_sub = Gtk.Label(label=t("sub_telemetry"), css_classes=["view-subtitle"], xalign=0)
-        self.lbl_telem_sub.set_ellipsize(Pango.EllipsizeMode.END)
-        title_box.append(self.lbl_telem_sub)
-        top_row.append(title_box)
-
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        top_row.append(spacer)
-
-        self.btn_tok = Gtk.Button(label=t("token_settings"))
-        self.btn_tok.add_css_class("subtle-btn")
-        self.btn_tok.connect("clicked", self._on_token_dialog)
-        top_row.append(self.btn_tok)
-
-        self.btn_draft_rel = Gtk.Button(label=t("draft_release"))
-        self.btn_draft_rel.add_css_class("primary-btn")
-        self.btn_draft_rel.connect("clicked", lambda b: self._open_release_drafter())
-        top_row.append(self.btn_draft_rel)
-
-        page.append(top_row)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        page.append(scrolled)
-
-        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        scrolled.set_child(inner)
-
-        metrics_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.ins_views = self._make_metric_card("—", t("views_14d"))
-        self.ins_uniques = self._make_metric_card("—", t("uniques_14d"))
-        self.ins_stars = self._make_metric_card("0", t("stars"))
-        self.ins_forks = self._make_metric_card("0", t("forks"))
-        self.ins_downloads = self._make_metric_card("0", t("downloads"))
-        self.ins_issues = self._make_metric_card("0", t("open_issues"))
-
-        for c in [self.ins_views, self.ins_uniques, self.ins_stars, self.ins_forks, self.ins_downloads, self.ins_issues]:
-            c.set_hexpand(True)
-            metrics_row.append(c)
-        inner.append(metrics_row)
-
-        # Explanatory Token Banner Card
-        self.token_banner_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-        self.token_banner_card.add_css_class("token-banner-card")
-
-        t_icon = Gtk.Image.new_from_icon_name("dialog-information-symbolic")
-        t_icon.set_pixel_size(24)
-        self.token_banner_card.append(t_icon)
-
-        t_textbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        t_textbox.set_hexpand(True)
-        self.lbl_token_banner_title = Gtk.Label(label=t("token_banner_title"), css_classes=["token-banner-title"], xalign=0)
-        self.lbl_token_banner_title.set_ellipsize(Pango.EllipsizeMode.END)
-        self.lbl_token_banner_desc = Gtk.Label(label=t("token_banner_desc"), css_classes=["token-banner-desc"], xalign=0, wrap=True)
-        t_textbox.append(self.lbl_token_banner_title)
-        t_textbox.append(self.lbl_token_banner_desc)
-        self.token_banner_card.append(t_textbox)
-
-        self.btn_token_banner = Gtk.Button(label=t("token_banner_btn"))
-        self.btn_token_banner.add_css_class("primary-btn")
-        self.btn_token_banner.connect("clicked", self._on_token_dialog)
-        self.token_banner_card.append(self.btn_token_banner)
-        inner.append(self.token_banner_card)
-
-        mid_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-
-        chart_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        chart_card.add_css_class("hud-card")
-        chart_card.set_hexpand(True)
-        self.lbl_traffic_hdr = Gtk.Label(label=t("traffic_chart_title"), css_classes=["hud-card-header"], xalign=0)
-        self.lbl_traffic_hdr.set_ellipsize(Pango.EllipsizeMode.END)
-        chart_card.append(self.lbl_traffic_hdr)
-        self.views_chart = TrafficViewsChart()
-        chart_card.append(self.views_chart)
-        mid_row.append(chart_card)
-
-        rx_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        rx_card.add_css_class("hud-card")
-        rx_card.set_size_request(240, -1)
-        self.lbl_rx_hdr = Gtk.Label(label=t("reactions"), css_classes=["hud-card-header"], xalign=0)
-        self.lbl_rx_hdr.set_ellipsize(Pango.EllipsizeMode.END)
-        rx_card.append(self.lbl_rx_hdr)
-
-        rx_grid = Gtk.Grid()
-        rx_grid.set_column_spacing(12)
-        rx_grid.set_row_spacing(10)
-        self.rx_labels = {}
-        items = [("👍", "+1"), ("❤️", "heart"), ("🚀", "rocket"), ("🎉", "hooray"), ("👀", "eyes"), ("😄", "laugh")]
-        for i, (symbol, key) in enumerate(items):
-            r = i // 2
-            c = (i % 2) * 2
-            s_lbl = Gtk.Label(label=symbol)
-            v_lbl = Gtk.Label(label="0", css_classes=["stat-value"])
-            self.rx_labels[key] = v_lbl
-            rx_grid.attach(s_lbl, c, r, 1, 1)
-            rx_grid.attach(v_lbl, c + 1, r, 1, 1)
-        rx_card.append(rx_grid)
-        mid_row.append(rx_card)
-
-        inner.append(mid_row)
-
-        bot_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-
-        ref_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        ref_card.add_css_class("hud-card")
-        ref_card.set_hexpand(True)
-        self.lbl_ref_hdr = Gtk.Label(label=t("top_referrers"), css_classes=["hud-card-header"], xalign=0)
-        self.lbl_ref_hdr.set_ellipsize(Pango.EllipsizeMode.END)
-        ref_card.append(self.lbl_ref_hdr)
-        self.referrers_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        ref_card.append(self.referrers_container)
-        bot_row.append(ref_card)
-
-        rel_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        rel_card.add_css_class("hud-card")
-        rel_card.set_hexpand(True)
-        self.lbl_rel_hdr = Gtk.Label(label=t("release_downloads"), css_classes=["hud-card-header"], xalign=0)
-        self.lbl_rel_hdr.set_ellipsize(Pango.EllipsizeMode.END)
-        rel_card.append(self.lbl_rel_hdr)
-        self.releases_container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        rel_card.append(self.releases_container)
-        bot_row.append(rel_card)
-
-        inner.append(bot_row)
-
-        self.stack.add_named(page, "telemetry")
-
-    def _refresh_telemetry_view(self):
-        if not self.git.is_valid():
-            self.token_banner_card.set_visible(True)
-            self.views_chart.set_history([])
-            return
-
-        owner, repo = self.git.get_github_coords()
-        if not owner or not repo:
-            self.token_banner_card.set_visible(True)
-            self.views_chart.set_history([])
-            return
-
-        def _worker():
-            data = self.telemetry.fetch_full_insights(owner, repo)
-            GLib.idle_add(lambda: self._apply_telemetry_data(data))
-
-        threading.Thread(target=_worker, daemon=True).start()
-
-    def _apply_telemetry_data(self, data):
-        self.ins_stars.val_widget.set_text(str(data["stars"]))
-        self.ins_forks.val_widget.set_text(str(data["forks"]))
-        self.ins_downloads.val_widget.set_text(str(data["total_downloads"]))
-        self.ins_issues.val_widget.set_text(str(data["open_issues"]))
-
-        if data.get("has_traffic_access"):
-            self.ins_views.val_widget.set_text(str(data["views_total"]))
-            self.ins_uniques.val_widget.set_text(str(data["views_uniques"]))
-            self.views_chart.set_history(data.get("views_history", []))
-            self.token_banner_card.set_visible(False)
-        else:
-            self.ins_views.val_widget.set_text("—")
-            self.ins_uniques.val_widget.set_text("—")
-            self.views_chart.set_history([])
-            self.token_banner_card.set_visible(True)
-
-        rx = data.get("reactions", {})
-        for key, widget in self.rx_labels.items():
-            widget.set_text(str(rx.get(key, 0)))
-
-        while child := self.referrers_container.get_first_child():
-            self.referrers_container.remove(child)
-
-        referrers = data.get("referrers", [])
-        if referrers:
-            for ref in referrers:
-                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-                row.add_css_class("file-item-row")
-                lbl = Gtk.Label(label=ref["site"], xalign=0, hexpand=True)
-                row.append(lbl)
-                v_lbl = Gtk.Label(label=f"{ref['views']} {t('views_count')}", css_classes=["ahead-badge"])
-                row.append(v_lbl)
-                u_lbl = Gtk.Label(label=f"{ref['uniques']} {t('uniques_count')}", css_classes=["branch-badge"])
-                row.append(u_lbl)
-                self.referrers_container.append(row)
-        else:
-            msg = t("no_referrers")
-            self.referrers_container.append(Gtk.Label(label=msg, css_classes=["stat-label"], xalign=0))
-
-        while child := self.releases_container.get_first_child():
-            self.releases_container.remove(child)
-
-        releases = data.get("releases", [])
-        if releases:
-            for rel in releases:
-                for a in rel.get("assets", []):
-                    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-                    row.add_css_class("file-item-row")
-                    n_lbl = Gtk.Label(label=a["name"], xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE)
-                    row.append(n_lbl)
-                    d_badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
-                    d_badge.add_css_class("branch-badge")
-                    d_badge.append(Gtk.Label(label=str(a.get("downloads", 0))))
-                    d_icon = Gtk.Image.new_from_icon_name("folder-download-symbolic")
-                    d_icon.set_pixel_size(12)
-                    d_badge.append(d_icon)
-                    row.append(d_badge)
-                    self.releases_container.append(row)
-        else:
-            self.releases_container.append(Gtk.Label(label=t("no_releases"), css_classes=["stat-label"], xalign=0))
-
     # --- COMPLETE STRINGS LOCALIZATION ---
 
     def _update_all_strings(self):
@@ -1089,7 +463,8 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         self.lbl_token_banner_desc.set_text(t("token_banner_desc"))
         self.btn_token_banner.set_label(t("token_banner_btn"))
         self.refresh_lbl.set_text(t("refreshing"))
-        self._run_secret_scan()
+        # Re-render the scanner pill label in the new language
+        self._apply_secret_scan(self.last_scan_findings)
 
     # --- DATA REFRESH ---
 
@@ -1155,8 +530,30 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         self._refresh_timer_id = GLib.timeout_add(1500, _start_hide)
         self._refresh_finish_timer_id = GLib.timeout_add(1800, _complete_hide)
 
+    @staticmethod
+    def _collect_repo_snapshot(git):
+        """Everything the views need from git. Runs on a worker thread: no widget access here."""
+        ahead, behind = git.get_ahead_behind()
+        is_clean, findings = scan_staged_files(git)
+        return {
+            "root": git.root_path,
+            "name": git.get_repo_name(),
+            "branch": git.get_current_branch(),
+            "ahead": ahead,
+            "behind": behind,
+            "has_origin": git.has_remote("origin"),
+            "upstream": git.get_upstream(),
+            "has_commits": git.has_commits(),
+            "merging": git.is_merging(),
+            "status": git.get_status_files(),
+            "scan_findings": [] if is_clean else findings,
+        }
+
     def _load_repo_data(self):
+        """Reloads repository state in the background and then rebuilds the sidebar and changes view."""
+        self._load_generation = getattr(self, "_load_generation", 0) + 1
         if not self.git.is_valid():
+            self.snapshot = None
             self.sidebar_repo_name.set_text(t("open_project_hint"))
             self._set_sidebar_branch("")
             self.sidebar_ahead.set_text("")
@@ -1168,15 +565,24 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             self._render_no_repo_placeholder()
             return
 
+        generation = self._load_generation
+        git = self.git
+        run_in_background(lambda: self._collect_repo_snapshot(git),
+                          lambda snap: self._apply_repo_snapshot(generation, snap))
+
+    def _apply_repo_snapshot(self, generation, snap):
+        if generation != self._load_generation or snap["root"] != self.git.root_path:
+            return  # a newer reload was requested, or the repository changed meanwhile
+        self.snapshot = snap
+        ahead, behind, has_remote = snap["ahead"], snap["behind"], snap["has_origin"]
+
         self.sidebar_pills_row.set_visible(True)
         self.btn_stash_shelf.set_visible(True)
-        self.sidebar_repo_name.set_text(self.git.get_repo_name())
-        self._set_sidebar_branch(self.git.get_current_branch())
-        ahead, behind = self.git.get_ahead_behind()
+        self.sidebar_repo_name.set_text(snap["name"])
+        self._set_sidebar_branch(snap["branch"])
         self.sidebar_ahead.set_text(f"↑{ahead} ↓{behind}")
-        self._refresh_sync_status(ahead, behind)
+        self._refresh_sync_status(ahead, behind, has_origin=has_remote, upstream=snap["upstream"])
         self._mark_state_fresh()
-        has_remote = self.git.has_remote("origin")
         if ahead > 0 and has_remote:
             self.btn_push_only.set_label(f"↑ {t('btn_push')} ({ahead})")
             self.btn_push_only.set_visible(True)
@@ -1186,453 +592,8 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         else:
             self.btn_push_only.set_visible(False)
 
-        self._refresh_changes_view()
+        self._refresh_changes_view(snap)
         self._update_commit_preview()
-
-    def _refresh_changes_view(self):
-        while child := self.files_container.get_first_child():
-            self.files_container.remove(child)
-
-        status = self.git.get_status_files()
-        staged = status.get("staged", [])
-        unstaged = status.get("unstaged", [])
-        untracked = status.get("untracked", [])
-        conflicted = status.get("conflicted", [])
-
-        has_files = bool(staged or unstaged or untracked or conflicted)
-
-        # Show Publish to GitHub banner if repo has no origin remote AND there are files to commit
-        if not self.git.has_remote("origin") and has_files:
-            publish_card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-            publish_card.add_css_class("token-banner-card")
-
-            p_icon = Gtk.Image.new_from_icon_name("send-to-symbolic")
-            p_icon.set_pixel_size(32)
-            publish_card.append(p_icon)
-
-            p_textbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            p_textbox.set_hexpand(True)
-            p_title = Gtk.Label(label=t("publish_card_title"), css_classes=["token-banner-title"], xalign=0)
-            p_desc = Gtk.Label(label=t("publish_card_desc"), css_classes=["token-banner-desc"], xalign=0, wrap=True)
-            p_textbox.append(p_title)
-            p_textbox.append(p_desc)
-            publish_card.append(p_textbox)
-
-            btn_publish_card = Gtk.Button(label=t("publish_btn"))
-            btn_publish_card.add_css_class("primary-btn")
-            btn_publish_card.connect("clicked", lambda b: self._on_publish_dialog())
-            publish_card.append(btn_publish_card)
-
-            self.files_container.append(publish_card)
-
-        self._run_secret_scan()
-
-        if not has_files:
-            self.commit_card.set_visible(False)
-            self._render_empty_changes()
-            return
-
-        self.commit_card.set_visible(True)
-        can_commit = len(staged) > 0 or self.check_amend.get_active()
-        has_origin = self.git.has_remote("origin")
-        self.btn_commit.set_sensitive(can_commit)
-        self.btn_commit_push.set_sensitive(can_commit)
-        if has_origin:
-            self.btn_commit_push.set_label(f"🚀 {t('btn_commit_push')}")
-        else:
-            self.btn_commit_push.set_label(f"☁️ {t('btn_commit_publish')}")
-
-        if conflicted:
-            hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            lbl = Gtk.Label(label=f"⚠ {t('conflicted_title')} ({len(conflicted)})", css_classes=["hud-card-header", "conflict-header"], xalign=0)
-            hdr.append(lbl)
-            hdr.append(Gtk.Box(hexpand=True))
-            if self.git.is_merging():
-                btn_abort = Gtk.Button(label=t("merge_abort"), css_classes=["flat", "danger-text"])
-                btn_abort.connect("clicked", self._on_abort_merge)
-                hdr.append(btn_abort)
-            self.files_container.append(hdr)
-            for item in conflicted:
-                self._add_file_row(item, is_staged=False)
-
-        if staged:
-            hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            if conflicted:
-                hdr.set_margin_top(12)
-            lbl = Gtk.Label(label=f"{t('staged_title')} ({len(staged)})", css_classes=["hud-card-header"], xalign=0)
-            hdr.append(lbl)
-            hdr.append(Gtk.Box(hexpand=True))
-            btn_unstage_all = Gtk.Button(label=t("unstage_all"), css_classes=["flat"])
-            btn_unstage_all.connect("clicked", self._on_unstage_all)
-            hdr.append(btn_unstage_all)
-            self.files_container.append(hdr)
-
-            for item in staged:
-                self._add_file_row(item, is_staged=True)
-
-        if unstaged:
-            hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            hdr.set_margin_top(12)
-            lbl = Gtk.Label(label=f"{t('unstaged_title')} ({len(unstaged)})", css_classes=["hud-card-header"], xalign=0)
-            hdr.append(lbl)
-            hdr.append(Gtk.Box(hexpand=True))
-            btn_stage_all = Gtk.Button(label=t("stage_all"), css_classes=["flat"])
-            btn_stage_all.connect("clicked", self._on_stage_all)
-            hdr.append(btn_stage_all)
-            self.files_container.append(hdr)
-
-            for item in unstaged:
-                self._add_file_row(item, is_staged=False)
-
-        if untracked:
-            hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            hdr.set_margin_top(12)
-            lbl = Gtk.Label(label=f"{t('untracked_title')} ({len(untracked)})", css_classes=["hud-card-header"], xalign=0)
-            hdr.append(lbl)
-            self.files_container.append(hdr)
-
-            for item in untracked:
-                self._add_file_row(item, is_staged=False)
-
-    def _render_no_repo_placeholder(self):
-        while child := self.files_container.get_first_child():
-            self.files_container.remove(child)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.add_css_class("welcome-placeholder-card")
-        box.set_halign(Gtk.Align.CENTER)
-        box.set_valign(Gtk.Align.CENTER)
-        box.set_vexpand(True)
-        box.set_hexpand(True)
-
-        icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
-        icon.set_pixel_size(48)
-        box.append(icon)
-
-        t_lbl = Gtk.Label(label=t("no_repo_title"), css_classes=["view-title"])
-        box.append(t_lbl)
-
-        d_lbl = Gtk.Label(label=t("no_repo_desc"), css_classes=["view-subtitle"], wrap=True)
-        d_lbl.set_max_width_chars(50)
-        box.append(d_lbl)
-
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        btn_row.set_halign(Gtk.Align.CENTER)
-
-        btn = Gtk.Button(label=t("btn_open_repo"))
-        btn.add_css_class("primary-btn")
-        btn.connect("clicked", self._on_choose_repo)
-        btn_row.append(btn)
-
-        if self.git.repo_path and os.path.isdir(self.git.repo_path) and not self.git.is_valid():
-            folder_name = os.path.basename(self.git.repo_path)
-            btn_init = Gtk.Button(label=f"✨ {t('btn_init_repo')} ({folder_name})")
-            btn_init.add_css_class("suggested-action")
-            btn_init.connect("clicked", self._on_init_repo_clicked)
-            btn_row.append(btn_init)
-
-        box.append(btn_row)
-
-        self.files_container.append(box)
-
-    def _render_empty_changes(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        box.set_halign(Gtk.Align.CENTER)
-        box.set_valign(Gtk.Align.CENTER)
-        box.set_vexpand(True)
-        box.set_hexpand(True)
-
-        has_remote = self.git.is_valid() and self.git.has_remote("origin")
-        has_commits = self.git.is_valid() and self.git.has_commits()
-        ahead, behind = self.git.get_ahead_behind() if self.git.is_valid() else (0, 0)
-
-        if not has_remote:
-            if has_commits:
-                icon = Gtk.Image.new_from_icon_name("send-to-symbolic")
-                icon.set_pixel_size(48)
-                box.append(icon)
-
-                t_lbl = Gtk.Label(label=t("local_commit_ready"), css_classes=["view-title"])
-                box.append(t_lbl)
-
-                s_lbl = Gtk.Label(label=t("local_commit_sub"), css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
-                s_lbl.set_max_width_chars(50)
-                box.append(s_lbl)
-
-                btn_pub = Gtk.Button(label=f"☁️ {t('publish_btn')}")
-                btn_pub.add_css_class("primary-btn")
-                btn_pub.set_margin_top(12)
-                btn_pub.connect("clicked", lambda b: self._on_publish_dialog())
-                box.append(btn_pub)
-            else:
-                icon = Gtk.Image.new_from_icon_name("folder-symbolic")
-                icon.set_pixel_size(48)
-                box.append(icon)
-
-                t_lbl = Gtk.Label(label=t("clean_tree"), css_classes=["view-title"])
-                box.append(t_lbl)
-
-                s_lbl = Gtk.Label(label=t("empty_repo_sub"), css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
-                s_lbl.set_max_width_chars(50)
-                box.append(s_lbl)
-
-                btn_pub = Gtk.Button(label=f"☁️ {t('publish_btn')}")
-                btn_pub.add_css_class("primary-btn")
-                btn_pub.set_margin_top(12)
-                btn_pub.connect("clicked", lambda b: self._on_publish_dialog())
-                box.append(btn_pub)
-        elif ahead > 0:
-            icon = Gtk.Image.new_from_icon_name("software-update-available-symbolic")
-            icon.set_pixel_size(48)
-            box.append(icon)
-
-            t_lbl = Gtk.Label(label=t("unpushed_title"), css_classes=["view-title"])
-            box.append(t_lbl)
-
-            s_lbl = Gtk.Label(label=f"{t('unpushed_sub')} ({ahead})", css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
-            s_lbl.set_max_width_chars(50)
-            box.append(s_lbl)
-
-            btn_sync = Gtk.Button(label=f"🚀 {t('btn_push_ahead')} ({ahead})")
-            btn_sync.add_css_class("primary-btn")
-            btn_sync.set_margin_top(12)
-            btn_sync.connect("clicked", lambda b: self._do_push())
-            box.append(btn_sync)
-        elif behind > 0:
-            icon = Gtk.Image.new_from_icon_name("software-update-available-symbolic")
-            icon.set_pixel_size(48)
-            box.append(icon)
-
-            t_lbl = Gtk.Label(label=t("behind_title"), css_classes=["view-title"])
-            box.append(t_lbl)
-
-            s_lbl = Gtk.Label(label=f"{t('behind_sub')} ({behind})", css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
-            s_lbl.set_max_width_chars(50)
-            box.append(s_lbl)
-
-            btn_pull = Gtk.Button(label=f"↓ {t('btn_pull')} ({behind})")
-            btn_pull.add_css_class("primary-btn")
-            btn_pull.set_margin_top(12)
-            btn_pull.connect("clicked", lambda b: self._do_pull())
-            box.append(btn_pull)
-        else:
-            icon = Gtk.Image.new_from_icon_name("emblem-ok-symbolic")
-            icon.set_pixel_size(48)
-            box.append(icon)
-
-            t_lbl = Gtk.Label(label=t("clean_tree"), css_classes=["view-title"])
-            box.append(t_lbl)
-
-            s_lbl = Gtk.Label(label=t("clean_tree_sub"), css_classes=["view-subtitle"], wrap=True, justify=Gtk.Justification.CENTER)
-            s_lbl.set_max_width_chars(50)
-            box.append(s_lbl)
-
-        self.files_container.append(box)
-
-    def _add_file_row(self, item, is_staged):
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        row.add_css_class("file-item-row")
-
-        filepath = item.get("path", "")
-
-        check = Gtk.CheckButton()
-        check.set_active(is_staged)
-        check.connect("toggled", lambda cb, fp=filepath, st=is_staged: self._toggle_stage_file(fp, st))
-        row.append(check)
-
-        st_char = item.get("status", "M")
-        badge = Gtk.Label(label=st_char, css_classes=["status-tag"])
-        if st_char in ["M", "T", "R", "C"]:
-            badge.add_css_class("status-mod")
-        elif st_char in ["A", "?"]:
-            badge.add_css_class("status-add")
-        else:
-            badge.add_css_class("status-del")
-        row.append(badge)
-
-        path_lbl = Gtk.Label(label=filepath, xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.MIDDLE)
-        row.append(path_lbl)
-
-        add = item.get("lines_add", 0)
-        dels = item.get("lines_del", 0)
-        if add > 0 or dels > 0:
-            stat_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            if add > 0:
-                stat_box.append(Gtk.Label(label=f"+{add}", css_classes=["line-add"]))
-            if dels > 0:
-                stat_box.append(Gtk.Label(label=f"-{dels}", css_classes=["line-del"]))
-            row.append(stat_box)
-
-        if not is_staged and st_char != "U":
-            btn_discard = Gtk.Button(icon_name="edit-undo-symbolic", css_classes=["subtle-icon-btn"])
-            btn_discard.set_tooltip_text(t("discard_tooltip"))
-            btn_discard.connect("clicked", lambda b, fp=filepath, untracked=(st_char == "?"): self._on_discard_file(fp, untracked))
-            row.append(btn_discard)
-
-        btn_diff = Gtk.Button()
-        btn_diff.set_icon_name("edit-find-symbolic")
-        btn_diff.set_tooltip_text(t("view_diff"))
-        btn_diff.add_css_class("subtle-icon-btn")
-        btn_diff.connect("clicked", lambda b, fp=filepath, st=is_staged: self._show_diff(fp, st))
-        row.append(btn_diff)
-
-        self.files_container.append(row)
-
-    def _on_discard_file(self, filepath, untracked):
-        desc = (t("discard_desc_untracked") if untracked else t("discard_desc")).format(path=filepath)
-
-        def on_choice(choice, _value):
-            if choice != "discard":
-                return
-            ok, out = self.git.discard_file(filepath, untracked=untracked)
-            if ok:
-                self.sound.play("pop")
-                self._toast(t("discard_done").format(path=os.path.basename(filepath)))
-            else:
-                self.sound.play("error")
-                self._show_error_dialog(t("discard_title"), out)
-            self._load_repo_data()
-
-        show_choice_dialog(self, t("discard_title"), desc,
-                           [("cancel", t("cancel"), "subtle"), ("discard", t("discard_btn"), "destructive")],
-                           on_choice)
-
-    def _toggle_stage_file(self, filepath, currently_staged):
-        if currently_staged:
-            self.git.unstage_file(filepath)
-            self.sound.play("pop")
-        else:
-            self.git.stage_file(filepath)
-            self.sound.play("click")
-        self._load_repo_data()
-
-    def _on_stage_all(self, btn):
-        self.git.stage_all()
-        self.sound.play("click")
-        self._load_repo_data()
-
-    def _on_unstage_all(self, btn):
-        self.git.unstage_all()
-        self.sound.play("pop")
-        self._load_repo_data()
-
-    def _show_diff(self, filepath, is_staged):
-        self.sound.play("click")
-        diff_text = self.git.get_file_diff(filepath, staged=is_staged)
-        dlg = DiffViewerDialog(
-            self,
-            filename=filepath,
-            diff_text=diff_text,
-            is_staged=is_staged,
-            on_stage_toggle=self._toggle_stage_file
-        )
-        dlg.present()
-
-    def _commit_header(self):
-        desc = self.entry_desc.get_text().strip()
-        if not desc:
-            return ""
-        scope = self.entry_scope.get_text().strip()
-        breaking = "!" if self.check_breaking.get_active() else ""
-        if scope:
-            return f"{self.selected_type}({scope}){breaking}: {desc}"
-        return f"{self.selected_type}{breaking}: {desc}"
-
-    def _commit_body(self):
-        buf = self.text_body.get_buffer()
-        return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False).strip()
-
-    def _set_body_visible(self, visible):
-        self.body_revealer.set_reveal_child(visible)
-        if self.btn_body_toggle.get_active() != visible:
-            self.btn_body_toggle.set_active(visible)
-        if visible:
-            self.text_body.grab_focus()
-
-    def _on_amend_toggled(self, check):
-        if check.get_active() and not self.entry_desc.get_text().strip():
-            self._fill_composer_from_head()
-        if not check.get_active():
-            self.entry_desc.set_placeholder_text(t("commit_desc_placeholder"))
-        self._update_commit_preview()
-        if hasattr(self, "files_container") and self.git.is_valid():
-            # Re-evaluate whether the commit buttons are enabled
-            staged = bool(self.git.get_status_files()["staged"])
-            self.btn_commit.set_sensitive(staged or check.get_active())
-            self.btn_commit_push.set_sensitive(staged or check.get_active())
-
-    def _fill_composer_from_head(self):
-        """Pre-fills type/scope/breaking/description/body from the last commit (for amend)."""
-        subject, body = self.git.get_last_commit_message()
-        m = re.match(r"^(\w+)(?:\(([^)]*)\))?(!)?:\s*(.*)$", subject)
-        if not (m and m.group(1) in self.type_chips):
-            # Not a Conventional Commit (e.g. a merge): keep the message unless the user types a new one
-            self.entry_desc.set_placeholder_text(t("amend_keep_message"))
-            return
-        self._select_type(m.group(1))
-        self.entry_scope.set_text(m.group(2) or "")
-        self.check_breaking.set_active(bool(m.group(3)))
-        self.entry_desc.set_text(m.group(4))
-        self.text_body.get_buffer().set_text(body)
-        if body:
-            self._set_body_visible(True)
-
-    def _on_commit(self, push=False):
-        amend = self.check_amend.get_active()
-        if not self.entry_desc.get_text().strip() and not amend:
-            self.sound.play("error")
-            return
-
-        def _proceed():
-            if self.last_scan_findings:
-                self._show_secret_warning_dialog(on_confirm=lambda: self._execute_commit(push=push))
-            else:
-                self._execute_commit(push=push)
-
-        if amend and self.git.is_head_pushed():
-            show_choice_dialog(
-                self, t("amend_pushed_title"), t("amend_pushed_desc"),
-                [("cancel", t("cancel"), "subtle"), ("amend", t("amend_btn"), "destructive")],
-                lambda choice, _v: _proceed() if choice == "amend" else None)
-            return
-        _proceed()
-
-    def _execute_commit(self, push=False):
-        amend = self.check_amend.get_active()
-        header = self._commit_header()
-        if not header and not amend:
-            return
-
-        ok, out = self.git.commit(header, body=self._commit_body(), amend=amend)
-        if ok:
-            self.sound.play("commit")
-            self.entry_desc.set_text("")
-            self.text_body.get_buffer().set_text("")
-            self._set_body_visible(False)
-            self.check_amend.set_active(False)
-            self._toast(t("amend_done") if amend else t("commit_done"))
-            self._load_repo_data()
-            if push:
-                if not self.git.has_remote("origin"):
-                    self._on_publish_dialog()
-                else:
-                    self._do_push()
-        else:
-            self.sound.play("error")
-            err_msg = out.strip() if out else "Nothing to commit or commit failed."
-            self._show_error_dialog(t("commit_failed"), err_msg)
-
-    def _on_stash(self, btn):
-        ok, out = self.git.stash_save()
-        if ok:
-            self.sound.play("pop")
-            self._load_repo_data()
-
-    def _on_pop_stash(self, btn):
-        ok, out = self.git.stash_pop()
-        if ok:
-            self.sound.play("pop")
-            self._load_repo_data()
 
     def _toast(self, message, timeout=3):
         toast = Adw.Toast(title=message)
@@ -1752,7 +713,6 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             self._refresh_telemetry_view()
 
 
-
     # --- GLOBAL ACTIONS & MODALS ---
 
     def _latin_keyval(self, keyval, keycode, state):
@@ -1848,41 +808,6 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
             widget = widget.get_parent()
         return False
 
-    def _on_history_row_clicked(self, row, x, y, commit_hash, message):
-        if self._click_hits_button(row, x, y):
-            return
-        self.sound.play("click")
-        dlg = DiffViewerDialog(
-            self,
-            filename=f"{commit_hash} — {message}",
-            diff_text=self.git.show_commit(commit_hash),
-            subtitle=t("commit_diff_sub"),
-        )
-        dlg.present()
-
-    def _on_reword_head(self):
-        subject, _ = self.git.get_last_commit_message()
-
-        def apply(choice, new_subject):
-            if choice != "reword" or not new_subject or new_subject == subject:
-                return
-            ok, out = self.git.reword_head(new_subject)
-            if ok:
-                self.sound.play("commit")
-                self._toast(t("amend_done"))
-                self._load_repo_data()
-                self._refresh_history_view()
-            else:
-                self.sound.play("error")
-                self._show_error_dialog(t("commit_failed"), out)
-
-        desc = t("reword_desc")
-        if self.git.is_head_pushed():
-            desc += "\n\n" + t("amend_pushed_desc")
-        show_choice_dialog(self, t("reword_title"), desc,
-                           [("cancel", t("cancel"), "subtle"), ("reword", t("reword_btn"), "primary")],
-                           apply, entry_text=subject, entry_validator=lambda v: bool(v.strip()))
-
     def _on_repo_card_clicked(self, card, x, y):
         # Buttons inside the card (branch badge, sync row, open folder) handle their own clicks
         if not self._click_hits_button(card, x, y):
@@ -1920,15 +845,6 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         elif self.active_view == "pulse":
             self._refresh_pulse_view()
 
-    def _on_abort_merge(self, btn):
-        ok, out = self.git.merge_abort()
-        if ok:
-            self.sound.play("pop")
-        else:
-            self.sound.play("error")
-            self._show_error_dialog(t("merge_failed"), out)
-        self._load_repo_data()
-
     def _on_open_stashes(self):
         if not self.git.is_valid():
             return
@@ -1954,162 +870,8 @@ class GitPulseWindow(SyncMixin, Gtk.ApplicationWindow):
         )
         dlg.present()
 
-    def _run_secret_scan(self):
-        is_clean, findings = scan_staged_files(self.git)
-        self.last_scan_findings = findings
-        if not is_clean:
-            self.scanner_status_pill.remove_css_class("scanner-pill-clean")
-            self.scanner_status_pill.add_css_class("scanner-pill-warn")
-            count = len(findings)
-            if i18n.get_language() == "ru":
-                warn_text = f"⚠️ {count} {plural_ru(count, 'утечка!', 'утечки!', 'утечек!')}"
-            else:
-                warn_text = f"⚠️ {count} secret{'s' if count > 1 else ''}!"
-            self.scanner_status_pill.set_label(warn_text)
-            self.scanner_status_pill.set_tooltip_text(t("scanner_warning"))
-        else:
-            self.scanner_status_pill.remove_css_class("scanner-pill-warn")
-            self.scanner_status_pill.add_css_class("scanner-pill-clean")
-            self.scanner_status_pill.set_label(f"🛡️ {t('scanner_clean')}")
-            self.scanner_status_pill.set_tooltip_text(t("scanner_clean"))
-
-    def _on_scanner_pill_clicked(self, btn):
-        self.sound.play("click")
-        if self.last_scan_findings:
-            self._show_secret_warning_dialog(on_confirm=None)
-        else:
-            dlg = Gtk.Window(transient_for=self, modal=True)
-            dlg.set_title(t("scanner_clean"))
-            dlg.set_default_size(440, 180)
-            dlg.add_css_class("token-modal-window")
-
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-            box.set_margin_top(20)
-            box.set_margin_bottom(20)
-            box.set_margin_start(20)
-            box.set_margin_end(20)
-            dlg.set_child(box)
-
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-            icon = Gtk.Image.new_from_icon_name("security-high-symbolic")
-            icon.set_pixel_size(36)
-            row.append(icon)
-
-            t_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            t_box.set_hexpand(True)
-            lbl_title = Gtk.Label(label=t("scanner_clean"), css_classes=["view-title"], xalign=0)
-            t_box.append(lbl_title)
-            desc_text = "No private keys, tokens, or sensitive credentials detected in staged files." if i18n.get_language() == "en" else "В подготовленных изменениях не обнаружено приватных ключей, токенов или секретов."
-            lbl_desc = Gtk.Label(label=desc_text, css_classes=["view-subtitle"], xalign=0, wrap=True)
-            t_box.append(lbl_desc)
-            row.append(t_box)
-            box.append(row)
-
-            btn_ok = Gtk.Button(label="OK", css_classes=["primary-btn"])
-            btn_ok.set_halign(Gtk.Align.END)
-            btn_ok.connect("clicked", lambda b: dlg.close())
-            box.append(btn_ok)
-            dlg.present()
-
-    def _show_secret_warning_dialog(self, on_confirm=None):
-        self.sound.play("error")
-        dlg = Gtk.Window(transient_for=self, modal=True)
-        dlg.set_title(t("secrets_dialog_title"))
-        dlg.set_default_size(560, 360)
-        dlg.add_css_class("token-modal-window")
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(18)
-        box.set_margin_bottom(18)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        dlg.set_child(box)
-
-        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
-        icon.set_pixel_size(32)
-        hdr.append(icon)
-
-        t_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        t_box.set_hexpand(True)
-        lbl_title = Gtk.Label(label=t("secrets_dialog_title"), css_classes=["view-title"], xalign=0)
-        t_box.append(lbl_title)
-        lbl_desc = Gtk.Label(label=t("secrets_dialog_desc"), css_classes=["view-subtitle"], xalign=0, wrap=True)
-        t_box.append(lbl_desc)
-        hdr.append(t_box)
-        box.append(hdr)
-
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        scrolled.set_child(list_box)
-        box.append(scrolled)
-
-        for finding in self.last_scan_findings:
-            f_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            f_row.add_css_class("file-item-row")
-            tag = Gtk.Label(label=finding.get("rule", "Secret"), css_classes=["status-del"])
-            f_row.append(tag)
-            fn = f"{os.path.basename(finding.get('file', ''))}:{finding.get('line', 0)}"
-            fn_lbl = Gtk.Label(label=fn, css_classes=["stat-label"])
-            f_row.append(fn_lbl)
-            val_lbl = Gtk.Label(label=finding.get("preview", ""), xalign=0, hexpand=True)
-            f_row.append(val_lbl)
-            list_box.append(f_row)
-
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        btn_row.append(Gtk.Box(hexpand=True))
-
-        btn_cancel = Gtk.Button(label=t("cancel"), css_classes=["subtle-btn"])
-        btn_cancel.connect("clicked", lambda b: dlg.close())
-        btn_row.append(btn_cancel)
-
-        if on_confirm:
-            btn_commit_anyway = Gtk.Button(label=t("commit_anyway"), css_classes=["primary-btn"])
-            def _commit_proceed():
-                dlg.close()
-                on_confirm()
-            btn_commit_anyway.connect("clicked", lambda b: _commit_proceed())
-            btn_row.append(btn_commit_anyway)
-
-        box.append(btn_row)
-        dlg.present()
-
     def _show_error_dialog(self, title, msg):
-        dlg = Gtk.Window(transient_for=self, modal=True)
-        dlg.set_title(title)
-        dlg.set_default_size(460, 180)
-        dlg.add_css_class("token-modal-window")
-
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        box.set_margin_top(20)
-        box.set_margin_bottom(20)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        dlg.set_child(box)
-
-        lbl = Gtk.Label(label=f"{title}\n{msg}", wrap=True, xalign=0)
-        box.append(lbl)
-
-        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        btn_row.append(Gtk.Box(hexpand=True))
-
-        lower_msg = (msg or "").lower()
-        if any(w in lower_msg for w in ["auth", "token", "permission", "denied", "credential", "403", "401"]):
-            btn_token = Gtk.Button(label=f"🔑 {t('token_guide_title')}", css_classes=["subtle-btn"])
-            def _open_guide(b):
-                dlg.close()
-                self._on_token_dialog(None)
-            btn_token.connect("clicked", _open_guide)
-            btn_row.append(btn_token)
-
-        btn = Gtk.Button(label="OK", css_classes=["primary-btn"])
-        btn.connect("clicked", lambda b: dlg.close())
-        btn_row.append(btn)
-
-        box.append(btn_row)
-        dlg.present()
+        show_error_dialog(self, title, msg, on_open_token_guide=lambda: self._on_token_dialog(None))
 
 
 class GitPulseApp(Adw.Application):
@@ -2117,6 +879,8 @@ class GitPulseApp(Adw.Application):
         super().__init__(application_id="io.github.xronni.gitpulse")
 
     def do_activate(self):
+        # The whole UI is designed dark; keep Adw widgets (dialogs, header bars) consistent
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
         self._load_css()
         win = GitPulseWindow(self)
         win.present()

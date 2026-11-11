@@ -76,19 +76,22 @@ class SyncMixin:
             return t("time_just_now")
         return t("time_min_ago").format(n=minutes)
 
-    def _refresh_sync_status(self, ahead=None, behind=None):
-        """Updates the sidebar counters; ahead/behind may be passed in to avoid recomputing."""
+    def _refresh_sync_status(self, ahead=None, behind=None, has_origin=None, upstream=None):
+        """Updates the sidebar counters. Values already known (e.g. from a snapshot) skip git calls."""
         if not self.git.is_valid():
             self.sidebar_sync_row.set_visible(False)
             return
-        has_origin = self.git.has_remote("origin")
+        if has_origin is None:
+            has_origin = self.git.has_remote("origin")
         self.sidebar_sync_row.set_visible(has_origin)
         self.sidebar_ahead.set_visible(not has_origin)
         if not has_origin:
             return
         if ahead is None or behind is None:
             ahead, behind = self.git.get_ahead_behind()
-        upstream = self.git.get_upstream() or "origin"
+        if upstream is None:
+            upstream = self.git.get_upstream()
+        upstream = upstream or "origin"
 
         self.btn_sync_pull.set_label(f"↓ {behind}")
         self.btn_sync_push.set_label(f"↑ {ahead}")
